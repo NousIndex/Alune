@@ -129,7 +129,6 @@ export default function Library({
       </div>
 
       <div className="rail-foot">
-        <button onClick={onExport} disabled={!library.length}>Export ↓</button>
         {indexing && (
           <span className="idx-hint">
             indexing {indexProgress.done}/{indexProgress.total}
