@@ -132,7 +132,6 @@ export default function App() {
           setEditorOpen(true);
           setRailOpen(false);
         }}
-        onExport={exportLibrary}
         searchIndex={searchIndex}
         indexProgress={indexProgress}
       />

@@ -31,7 +31,6 @@ export default function Library({
   onSearch,
   onSelect,
   onAdd,
-  onExport,
   searchIndex,
   indexProgress,
 }) {
