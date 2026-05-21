@@ -34,18 +34,22 @@ const norm = (s) =>
   (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
 const dedupKey = (title, artist) => `${norm(title)}|${norm(artist)}`;
 
+const dedupRedisKey = (key) => `dedup:${key}`;
+
 async function addSong(redis, body) {
   const title = (body?.title || "").trim() || "Untitled";
   const artist = (body?.artist || "").trim();
   const key = dedupKey(title, artist);
 
-  // Reject duplicates by normalized title+artist. With ~hundreds of songs the
-  // scan is cheap enough that a dedicated secondary index isn't worth the
-  // schema overhead.
+  // 1) Catch duplicates that pre-date the dedup-key scheme by scanning existing
+  //    songs. With ~hundreds of songs this is cheap enough.
   const existing = await listAll(redis);
   const dup = existing.find((s) => dedupKey(s.title, s.artist) === key);
   if (dup) return { song: dup, existed: true };
 
+  // 2) Atomic claim via SET NX. Two concurrent requests for the same song
+  //    (e.g. double-click before the first response returns) both pass step
+  //    1, but only one wins this step. The loser fetches the winner's record.
   const song = {
     id: uid(),
     title,
@@ -54,6 +58,19 @@ async function addSong(redis, body) {
     lyrics: body?.lyrics || "",
     createdAt: Date.now(),
   };
+  const claimed = await redis.set(dedupRedisKey(key), song.id, { nx: true });
+  if (!claimed) {
+    const winnerId = await redis.get(dedupRedisKey(key));
+    if (winnerId) {
+      const raw = await redis.get(songKey(winnerId));
+      if (raw) {
+        const winner = typeof raw === "string" ? JSON.parse(raw) : raw;
+        return { song: { ...winner, id: winnerId }, existed: true };
+      }
+    }
+    // Stale dedup key with no song — extremely rare; treat as fresh write.
+  }
+
   await redis.set(songKey(song.id), JSON.stringify(song));
   await redis.lpush(INDEX_KEY, song.id);
   return { song, existed: false };

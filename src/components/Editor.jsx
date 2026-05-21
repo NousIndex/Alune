@@ -14,11 +14,13 @@ const EMPTY = { title: "", artist: "", lang: "auto", lyrics: "" };
 export default function Editor({ open, initial, onSave, onClose }) {
   const [form, setForm] = useState(EMPTY);
   const [fetchState, setFetchState] = useState({ loading: false, error: "" });
+  const [saveState, setSaveState] = useState({ saving: false, error: "" });
 
   useEffect(() => {
     if (open) {
       setForm(initial ? { ...initial } : EMPTY);
       setFetchState({ loading: false, error: "" });
+      setSaveState({ saving: false, error: "" });
     }
   }, [open, initial]);
 
@@ -49,6 +51,17 @@ export default function Editor({ open, initial, onSave, onClose }) {
   };
 
   const canFetch = form.title.trim().length > 0 && !fetchState.loading;
+
+  const onSaveClick = async () => {
+    if (saveState.saving) return;
+    setSaveState({ saving: true, error: "" });
+    try {
+      await onSave({ ...form, title: form.title.trim() || "Untitled" });
+      // Editor unmounts on success; no need to clear state.
+    } catch (e) {
+      setSaveState({ saving: false, error: e?.message || "Couldn't save" });
+    }
+  };
 
   return (
     <div
@@ -114,15 +127,17 @@ export default function Editor({ open, initial, onSave, onClose }) {
           {fetchState.error && <div className="hint error">{fetchState.error}</div>}
         </div>
 
+        {saveState.error && <div className="hint error">{saveState.error}</div>}
         <div className="modal-actions">
-          <button className="btn text" onClick={onClose}>
+          <button className="btn text" onClick={onClose} disabled={saveState.saving}>
             Cancel
           </button>
           <button
             className="btn primary"
-            onClick={() => onSave({ ...form, title: form.title.trim() || "Untitled" })}
+            onClick={onSaveClick}
+            disabled={saveState.saving}
           >
-            Save song
+            {saveState.saving ? "Saving…" : "Save song"}
           </button>
         </div>
       </div>
