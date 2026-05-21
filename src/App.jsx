@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Library from "./components/Library.jsx";
 import Reader from "./components/Reader.jsx";
 import Editor from "./components/Editor.jsx";
+import Notice from "./components/Notice.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
 import { getLibrary, addSong } from "./lib/libraryApi.js";
 import {
@@ -18,6 +19,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
+  const [notice, setNotice] = useState({ open: false, message: "" });
   const [searchIndex, setSearchIndex] = useState(() => new Map());
   const [indexProgress, setIndexProgress] = useState({ done: 0, total: 0, finished: false });
 
@@ -82,7 +84,10 @@ export default function App() {
     setActiveId(song.id);
     setEditorOpen(false);
     if (existed) {
-      alert(`“${song.title}” is already in the library — opening it.`);
+      setNotice({
+        open: true,
+        message: `“${song.title}” is already in the library — opening it.`,
+      });
     }
     // Pre-warm index for the new song so it's searchable immediately by pinyin/romaji.
     setSearchIndex((m) => new Map(m).set(song.id, lightSearchText(song)));
@@ -98,18 +103,6 @@ export default function App() {
       ...s,
       size: Math.min(2.6, Math.max(1.0, +(s.size + delta).toFixed(2))),
     }));
-
-  const exportLibrary = () => {
-    const blob = new Blob([JSON.stringify(library, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "alune-library.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   const selectSong = (id) => {
     setActiveId(id);
@@ -169,8 +162,23 @@ export default function App() {
 
       <Editor
         open={editorOpen}
+        library={library}
         onSave={handleSave}
+        onSelectExisting={(song) => {
+          setActiveId(song.id);
+          setEditorOpen(false);
+          setNotice({
+            open: true,
+            message: `“${song.title}” is already in the library — opening it.`,
+          });
+        }}
         onClose={() => setEditorOpen(false)}
+      />
+
+      <Notice
+        open={notice.open}
+        message={notice.message}
+        onClose={() => setNotice((n) => ({ ...n, open: false }))}
       />
     </div>
   );

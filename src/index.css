@@ -399,6 +399,26 @@ rt {
   animation: rise 0.25s cubic-bezier(0.2, 0.8, 0.25, 1);
 }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+.modal.notice {
+  width: min(400px, 100%);
+  padding: 30px 28px;
+  text-align: center;
+}
+.modal.notice .notice-msg {
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 1.15rem;
+  line-height: 1.55;
+  margin: 0 0 22px;
+  color: var(--paper);
+}
+.modal.notice .modal-actions {
+  margin-top: 0;
+  justify-content: center;
+}
+.modal.notice .btn.primary { min-width: 120px; }
 .modal h2 {
   font-family: "Fraunces", serif;
   font-style: italic;
