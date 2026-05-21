@@ -1,0 +1,28 @@
+{
+  "name": "liner-notes",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A quiet lyrics reader with Hanyu Pinyin and Romaji set above the original characters.",
+  "scripts": {
+    "copy-dict": "node scripts/copy-dict.mjs",
+    "predev": "npm run copy-dict",
+    "dev": "vite",
+    "prebuild": "npm run copy-dict",
+    "build": "vite build",
+    "preview": "vite preview",
+    "postinstall": "node scripts/copy-dict.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.38.0",
+    "pinyin-pro": "^3.28.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "wanakana": "^5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "kuromoji": "^0.1.2",
+    "vite": "^5.4.11"
+  }
+}

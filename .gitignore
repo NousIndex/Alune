@@ -1,0 +1,11 @@
+node_modules
+dist
+.DS_Store
+*.local
+*.local.json
+.env.local
+.vercel
+
+# The dictionary is generated into public/dict by scripts/copy-dict.mjs on install.
+# It's large (~12 MB); regenerated automatically, so it doesn't need to live in git.
+public/dict
