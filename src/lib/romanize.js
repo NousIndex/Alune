@@ -209,6 +209,34 @@ function romajiKanaFallback(line) {
   return out;
 }
 
+/* ---------------- whole-song dominant language ----------------
+ * Counts script characters across the lyrics. If one language covers
+ * ≥ threshold of the total, returns that language; otherwise "mixed".
+ * Kanji (HAN) folds into Japanese when the song contains any kana,
+ * since CJK songs rarely mix Chinese and Japanese in one work.
+ */
+const LATIN_LETTER = /[a-zA-Z]/;
+export function dominantLang(text, threshold = 0.8) {
+  let han = 0, kana = 0, hangul = 0, latin = 0;
+  for (const ch of text || "") {
+    if (KANA.test(ch)) kana++;
+    else if (HANGUL.test(ch)) hangul++;
+    else if (HAN.test(ch)) han++;
+    else if (LATIN_LETTER.test(ch)) latin++;
+  }
+  const hasKana = kana > 0;
+  const ja = hasKana ? kana + han : 0;
+  const zh = hasKana ? 0 : han;
+  const counts = { ja, zh, ko: hangul, en: latin };
+  const total = ja + zh + hangul + latin;
+  if (total === 0) return "en";
+  let best = "en", bestCount = 0;
+  for (const [k, v] of Object.entries(counts)) {
+    if (v > bestCount) { best = k; bestCount = v; }
+  }
+  return bestCount / total >= threshold ? best : "mixed";
+}
+
 /* ---------------- per-line language routing ---------------- */
 function lineLang(line, songLang) {
   if (songLang === "en") return "en";

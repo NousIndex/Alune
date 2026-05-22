@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { renderSong } from "../lib/romanize.js";
+import { renderSong, dominantLang } from "../lib/romanize.js";
 
 const CREDIT = {
-  auto: "Mixed",
   zh: "中文 · Pinyin",
   ja: "日本語 · Rōmaji",
   ko: "한국어 · Romaja",
   en: "English",
 };
+function creditFor(song) {
+  if (song.lang && song.lang !== "auto") return CREDIT[song.lang] || "Lyrics";
+  const dom = dominantLang(song.lyrics);
+  return dom === "mixed" ? "Mixed" : CREDIT[dom] || "Lyrics";
+}
 
 export default function Reader({
   song,
@@ -88,7 +92,7 @@ export default function Reader({
 
       <div className="reader-wrap">
         <article className="reader">
-          <div className="credit">{CREDIT[song.lang] || "Lyrics"}</div>
+          <div className="credit">{creditFor(song)}</div>
           <div className={"lyrics" + (settings.showRomaji ? "" : " no-ruby")}>
             {lines.map((ln, i) =>
               ln.blank ? (

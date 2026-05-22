@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { HAN, KANA, HANGUL } from "../lib/romanize.js";
+import { HAN, KANA, HANGUL, dominantLang } from "../lib/romanize.js";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -11,6 +11,9 @@ const FILTERS = [
 
 function detectLang(song) {
   if (song.lang && song.lang !== "auto") return song.lang;
+  const dom = dominantLang(song.lyrics);
+  if (dom !== "mixed") return dom;
+  // Truly mixed — fall back to first-match priority for the badge.
   if (KANA.test(song.lyrics)) return "ja";
   if (HANGUL.test(song.lyrics)) return "ko";
   if (HAN.test(song.lyrics)) return "zh";

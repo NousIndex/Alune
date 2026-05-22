@@ -42,6 +42,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
   const [fetchState, setFetchState] = useState({ loading: false, error: "" });
   const [saveState, setSaveState] = useState({ saving: false, error: "" });
   const [source, setSource] = useState("auto");
+  const [langInfoOpen, setLangInfoOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -49,6 +50,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
       setFetchState({ loading: false, error: "" });
       setSaveState({ saving: false, error: "" });
       setSource("auto");
+      setLangInfoOpen(false);
     }
   }, [open, initial]);
 
@@ -156,7 +158,19 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
         </div>
 
         <div className="field">
-          <label>Language</label>
+          <div className="lang-label-row">
+            <label>Language</label>
+            <button
+              type="button"
+              className="info-btn"
+              aria-label="About auto-detect"
+              aria-expanded={langInfoOpen}
+              title="Auto-detect works line-by-line. Force a language if a Japanese line is all kanji (no kana), or pick English to skip readings entirely."
+              onClick={() => setLangInfoOpen((v) => !v)}
+            >
+              i
+            </button>
+          </div>
           <div className="seg">
             {LANGS.map((l) => (
               <button
@@ -168,7 +182,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
               </button>
             ))}
           </div>
-          <div className="hint">
+          <div className={"hint lang-hint" + (langInfoOpen ? " show" : "")}>
             Auto-detect works line-by-line. Force a language if a Japanese line is all
             kanji (no kana), or pick English to skip readings entirely.
           </div>

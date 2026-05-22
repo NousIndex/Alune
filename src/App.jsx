@@ -220,9 +220,27 @@ export default function App() {
               Pick a song from the shared library, or add one. Chinese gets Hànyǔ
               Pīnyīn, Japanese gets rōmaji — set right above the characters.
             </p>
-            <button className="btn primary" onClick={() => setEditorOpen(true)}>
-              Add a song
-            </button>
+            <div className="center-actions">
+              <button className="btn primary" onClick={() => setEditorOpen(true)}>
+                Add a song
+              </button>
+              <button
+                className="btn ghost"
+                onClick={() => setSearchOverlayOpen(true)}
+                disabled={library.length === 0}
+                title={
+                  library.length === 0
+                    ? "Library is empty — add a song first."
+                    : "Search the library"
+                }
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <line x1="15.3" y1="15.3" x2="20" y2="20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                Search songs
+              </button>
+            </div>
           </div>
         )}
       </main>

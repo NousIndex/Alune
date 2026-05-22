@@ -473,6 +473,18 @@ rt {
   margin: 0;
 }
 .center-state p { margin: 0; max-width: 380px; line-height: 1.6; font-size: 0.92rem; }
+.center-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+.center-actions .btn.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .pulse {
   width: 34px;
   height: 34px;
@@ -646,6 +658,34 @@ rt {
 .hint { font-size: 0.76rem; color: var(--paper-faint); margin-top: 6px; line-height: 1.5; }
 .hint.error { color: var(--rose); }
 
+.lang-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.lang-label-row label { margin: 0; }
+.info-btn {
+  display: none; /* desktop: hint is always shown, icon stays hidden */
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper-dim);
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.info-btn:hover { color: var(--amber-soft); border-color: var(--amber-soft); }
+
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-thumb {
   background: var(--line);
@@ -736,14 +776,28 @@ rt {
   .reader .credit { margin-bottom: 20px; }
 
   /* Modal: full-width on phones, with iOS-safe input sizing. */
-  .scrim { padding: 12px; }
-  .modal { padding: 22px 18px; border-radius: 14px; }
-  .modal h2 { font-size: 1.3rem; margin-bottom: 16px; }
+  .scrim { padding: 12px; align-items: flex-start; }
+  .modal { padding: 18px 16px; border-radius: 14px; margin-top: 8px; }
+  .modal h2 { font-size: 1.25rem; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
   .field input,
-  .field textarea { font-size: 16px; } /* prevents iOS focus-zoom */
-  .field textarea { min-height: 180px; }
-  .modal-actions { flex-wrap: wrap; }
+  .field textarea { font-size: 16px; padding: 10px 12px; } /* prevents iOS focus-zoom */
+  .field textarea { min-height: 150px; }
+  .seg button { padding: 8px; font-size: 0.8rem; }
+  .modal-actions { flex-wrap: wrap; margin-top: 18px; }
 
-  .center-state { padding: 0 24px; }
+  /* Hide the language hint behind an info icon to save vertical space. */
+  .info-btn { display: inline-flex; }
+  .lang-hint { display: none; }
+  .lang-hint.show { display: block; }
+
+  /* Homescreen: pull content toward the top half of the viewport. */
+  .center-state {
+    padding: 14vh 24px 24px;
+    justify-content: flex-start;
+    gap: 16px;
+  }
   .center-state h3 { font-size: 1.4rem; }
+  .center-actions { width: 100%; }
+  .center-actions .btn { flex: 1; min-width: 0; justify-content: center; }
 }
