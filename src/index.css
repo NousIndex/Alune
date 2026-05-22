@@ -512,6 +512,19 @@ rt {
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .field-row label { margin: 0; }
+.fetch-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.seg.seg-compact { gap: 0; flex-wrap: nowrap; }
+.seg.seg-compact button {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  border-radius: 0;
+  border-right-width: 0;
+}
+.seg.seg-compact button:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+.seg.seg-compact button:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-right-width: 1px; }
 .hint { font-size: 0.76rem; color: var(--paper-faint); margin-top: 6px; line-height: 1.5; }
 .hint.error { color: var(--rose); }
 

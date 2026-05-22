@@ -9,6 +9,7 @@ async function tryFetch(path) {
 export default async function handler(req, res) {
   const title = (req.query.title || "").trim();
   const artist = (req.query.artist || "").trim();
+  const source = (req.query.source || "auto").trim();
   if (!title) {
     res.status(400).json({ error: "title is required" });
     return;
@@ -17,9 +18,20 @@ export default async function handler(req, res) {
   const q = new URLSearchParams({ title });
   if (artist) q.set("artist", artist);
 
-  let result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
-  if (!result.ok && result.status !== 429) {
+  // Musixmatch sometimes returns a different language version (e.g. Cantonese
+  // when Mandarin was wanted); YouTube tends to surface the more popular cut.
+  // "auto" keeps the Musixmatch→YouTube fallback chain; the explicit sources
+  // bypass it so the user can force one when auto picks the wrong version.
+  let result;
+  if (source === "youtube") {
     result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+  } else if (source === "musixmatch") {
+    result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
+  } else {
+    result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
+    if (!result.ok && result.status !== 429) {
+      result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+    }
   }
 
   res

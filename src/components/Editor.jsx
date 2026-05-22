@@ -12,6 +12,12 @@ const LANGS = [
 const EMPTY = { title: "", artist: "", lang: "auto", lyrics: "" };
 const MIN_LYRIC_CHARS = 20;
 
+const SOURCES = [
+  { id: "auto", label: "Auto" },
+  { id: "musixmatch", label: "Musixmatch" },
+  { id: "youtube", label: "YouTube" },
+];
+
 const norm = (s) =>
   (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
 // Strict dedup matches the server (title + artist). Loose match (title only)
@@ -35,12 +41,14 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
   const [form, setForm] = useState(EMPTY);
   const [fetchState, setFetchState] = useState({ loading: false, error: "" });
   const [saveState, setSaveState] = useState({ saving: false, error: "" });
+  const [source, setSource] = useState("auto");
 
   useEffect(() => {
     if (open) {
       setForm(initial ? { ...initial } : EMPTY);
       setFetchState({ loading: false, error: "" });
       setSaveState({ saving: false, error: "" });
+      setSource("auto");
     }
   }, [open, initial]);
 
@@ -70,7 +78,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
 
     setFetchState({ loading: true, error: "" });
     try {
-      const data = await fetchLyrics({ title: form.title, artist: form.artist });
+      const data = await fetchLyrics({ title: form.title, artist: form.artist, source });
 
       // 2) Re-check after the API resolves the artist — covers the case where
       //    the user typed only a title and an artist was unknown until now.
@@ -169,15 +177,35 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
         <div className="field">
           <div className="field-row">
             <label>Lyrics</label>
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={onFetch}
-              disabled={!canFetch}
-              title="Fetch lyrics from Musixmatch / YouTube Music"
-            >
-              {fetchState.loading ? "Fetching…" : "Fetch lyrics"}
-            </button>
+            <div className="fetch-controls">
+              <div className="seg seg-compact" role="group" aria-label="Lyrics source">
+                {SOURCES.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={source === s.id ? "sel" : ""}
+                    onClick={() => setSource(s.id)}
+                    disabled={fetchState.loading}
+                    title={
+                      s.id === "auto"
+                        ? "Try Musixmatch, fall back to YouTube"
+                        : `Force ${s.label} source`
+                    }
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={onFetch}
+                disabled={!canFetch}
+                title="Fetch lyrics from the selected source"
+              >
+                {fetchState.loading ? "Fetching…" : "Fetch lyrics"}
+              </button>
+            </div>
           </div>
           <textarea
             value={form.lyrics}
