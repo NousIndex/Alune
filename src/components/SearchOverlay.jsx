@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { lightSearchText } from "../lib/searchIndex.js";
 
 const MAX_RESULTS = 8;
 
+// Overlay searches title + artist only (incl. their pinyin/romaji/romaja).
+// Lyric-body matches are intentionally left to the sidebar — the overlay is a
+// fast "jump to a song" affordance, not a full-text grep.
 function scoreMatch(song, indexText, q) {
   const t = (song.title || "").toLowerCase();
   const a = (song.artist || "").toLowerCase();
@@ -15,7 +19,6 @@ function scoreMatch(song, indexText, q) {
 export default function SearchOverlay({
   open,
   library,
-  searchIndex,
   onSelect,
   onClose,
 }) {
@@ -36,12 +39,20 @@ export default function SearchOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Title+artist index (with romanizations). Rebuilt only when the library
+  // changes — no lyric content ever enters this map.
+  const titleIndex = useMemo(() => {
+    const m = new Map();
+    for (const s of library) m.set(s.id, lightSearchText(s));
+    return m;
+  }, [library]);
+
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return [];
     const scored = [];
     for (const s of library) {
-      const idx = searchIndex.get(s.id) || "";
+      const idx = titleIndex.get(s.id) || "";
       const score = scoreMatch(s, idx, term);
       if (score > 0) scored.push({ s, score });
     }
@@ -49,7 +60,7 @@ export default function SearchOverlay({
       (a, b) => b.score - a.score || a.s.title.localeCompare(b.s.title)
     );
     return scored.slice(0, MAX_RESULTS).map((x) => x.s);
-  }, [q, library, searchIndex]);
+  }, [q, library, titleIndex]);
 
   if (!open) return null;
 

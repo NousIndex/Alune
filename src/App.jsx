@@ -259,7 +259,6 @@ export default function App() {
       <SearchOverlay
         open={searchOverlayOpen}
         library={library}
-        searchIndex={searchIndex}
         onSelect={(id) => setActiveId(id)}
         onClose={() => setSearchOverlayOpen(false)}
       />

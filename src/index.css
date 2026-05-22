@@ -683,7 +683,7 @@ rt {
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
   }
   .rail-toggle { left: 10px; }
-  .rail-search-btn { left: 62px; }
+  .rail-search-btn { right: 10px; }
 
   /* When the rail is open the search input is right there, so hide the
      floating search button. Also slide the close-X to the rail's right edge
