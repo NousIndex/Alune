@@ -9,7 +9,15 @@ const CREDIT = {
   en: "English",
 };
 
-export default function Reader({ song, settings, onToggleRomaji, onResize }) {
+export default function Reader({
+  song,
+  settings,
+  onToggleRomaji,
+  onResize,
+  isAdmin,
+  onEdit,
+  onDelete,
+}) {
   const [status, setStatus] = useState("loading");
   const [lines, setLines] = useState([]);
   const [note, setNote] = useState("");
@@ -61,6 +69,20 @@ export default function Reader({ song, settings, onToggleRomaji, onResize }) {
           <button className="ctrl icon" title="Larger" onClick={() => onResize(0.12)}>
             A+
           </button>
+          {isAdmin && (
+            <>
+              <button className="ctrl" title="Edit this song" onClick={onEdit}>
+                Edit
+              </button>
+              <button
+                className="ctrl danger"
+                title="Delete this song"
+                onClick={onDelete}
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
       </div>
 

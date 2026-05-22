@@ -10,6 +10,7 @@ const LANGS = [
 ];
 
 const EMPTY = { title: "", artist: "", lang: "auto", lyrics: "" };
+const MIN_LYRIC_CHARS = 20;
 
 const norm = (s) =>
   (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
@@ -53,13 +54,18 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const isEdit = Boolean(initial?.id);
+
   const onFetch = async () => {
     // 1) Check existing library before hitting the lyrics API. Catches the
     //    case where the user has typed enough to identify a song already saved.
-    const existingNow = findExisting(library || [], form.title, form.artist);
-    if (existingNow) {
-      onSelectExisting?.(existingNow);
-      return;
+    //    Skip in edit mode — finding the song you're editing isn't a dup.
+    if (!isEdit) {
+      const existingNow = findExisting(library || [], form.title, form.artist);
+      if (existingNow) {
+        onSelectExisting?.(existingNow);
+        return;
+      }
     }
 
     setFetchState({ loading: true, error: "" });
@@ -70,10 +76,12 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
       //    the user typed only a title and an artist was unknown until now.
       const fetchedTitle = data.trackName || form.title;
       const fetchedArtist = data.artistName || form.artist;
-      const existingAfter = findExisting(library || [], fetchedTitle, fetchedArtist);
-      if (existingAfter) {
-        onSelectExisting?.(existingAfter);
-        return;
+      if (!isEdit) {
+        const existingAfter = findExisting(library || [], fetchedTitle, fetchedArtist);
+        if (existingAfter) {
+          onSelectExisting?.(existingAfter);
+          return;
+        }
       }
 
       setForm((f) => ({
@@ -90,11 +98,27 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
 
   const canFetch = form.title.trim().length > 0 && !fetchState.loading;
 
+  const lyricsLen = form.lyrics.trim().length;
+  const hasTitle = form.title.trim().length > 0;
+  const hasArtist = form.artist.trim().length > 0;
+  const hasEnoughLyrics = lyricsLen >= MIN_LYRIC_CHARS;
+  const canSave = hasTitle && hasArtist && hasEnoughLyrics && !saveState.saving;
+
+  const validationHint = !hasTitle
+    ? "Add a title before saving."
+    : !hasArtist
+      ? "Artist is required."
+      : !hasEnoughLyrics
+        ? `Add at least ${MIN_LYRIC_CHARS} characters of lyrics (${lyricsLen}/${MIN_LYRIC_CHARS}).`
+        : "";
+
   const onSaveClick = async () => {
-    if (saveState.saving) return;
+    if (!canSave) return;
     setSaveState({ saving: true, error: "" });
     try {
-      await onSave({ ...form, title: form.title.trim() || "Untitled" });
+      const payload = { ...form, title: form.title.trim() };
+      if (isEdit) payload.id = initial.id;
+      await onSave(payload);
       // Editor unmounts on success; no need to clear state.
     } catch (e) {
       setSaveState({ saving: false, error: e?.message || "Couldn't save" });
@@ -115,9 +139,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
         </div>
 
         <div className="field">
-          <label>
-            Artist / source <span className="opt">(optional)</span>
-          </label>
+          <label>Artist / source</label>
           <input
             value={form.artist}
             onChange={set("artist")}
@@ -166,6 +188,9 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
         </div>
 
         {saveState.error && <div className="hint error">{saveState.error}</div>}
+        {!saveState.error && validationHint && (
+          <div className="hint">{validationHint}</div>
+        )}
         <div className="modal-actions">
           <button className="btn text" onClick={onClose} disabled={saveState.saving}>
             Cancel
@@ -173,9 +198,10 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
           <button
             className="btn primary"
             onClick={onSaveClick}
-            disabled={saveState.saving}
+            disabled={!canSave}
+            title={!canSave && validationHint ? validationHint : undefined}
           >
-            {saveState.saving ? "Saving…" : "Save song"}
+            {saveState.saving ? "Saving…" : isEdit ? "Save changes" : "Save song"}
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
@@ -78,7 +78,12 @@ function readBody(req) {
   });
 }
 
-function devLibraryProxy() {
+function devLibraryProxy(adminToken) {
+  const norm = (s) =>
+    (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
+  const dedupKey = (t, a) => `${norm(t)}|${norm(a)}`;
+  const isAdmin = (req) => req.headers["x-admin-token"] === adminToken;
+
   return {
     name: "dev-library-proxy",
     configureServer(server) {
@@ -98,13 +103,11 @@ function devLibraryProxy() {
             const body = await readBody(req);
             const title = (body.title || "").trim() || "Untitled";
             const artist = (body.artist || "").trim();
-            const norm = (s) =>
-              (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
-            const key = `${norm(title)}|${norm(artist)}`;
+            const key = dedupKey(title, artist);
             const db = readDb();
             const existing = db.ids
               .map((id) => db.songs[id])
-              .find((s) => s && `${norm(s.title)}|${norm(s.artist)}` === key);
+              .find((s) => s && dedupKey(s.title, s.artist) === key);
             if (existing) return send(200, { song: existing, existed: true });
 
             const song = {
@@ -120,11 +123,71 @@ function devLibraryProxy() {
             writeDb(db);
             return send(201, { song, existed: false });
           }
-          res.setHeader("Allow", "GET, POST");
+          if (req.method === "PATCH") {
+            if (!isAdmin(req)) return send(401, { error: "Admin token required" });
+            const body = await readBody(req);
+            const id = (body.id || "").trim();
+            const db = readDb();
+            const current = db.songs[id];
+            if (!current) return send(404, { error: "Song not found" });
+            const next = { ...current };
+            if (typeof body.title === "string") next.title = body.title.trim() || "Untitled";
+            if (typeof body.artist === "string") next.artist = body.artist.trim();
+            if (typeof body.lang === "string") next.lang = body.lang;
+            if (typeof body.lyrics === "string") next.lyrics = body.lyrics;
+            next.updatedAt = Date.now();
+            const newKey = dedupKey(next.title, next.artist);
+            const collision = db.ids
+              .map((sid) => db.songs[sid])
+              .find((s) => s && s.id !== id && dedupKey(s.title, s.artist) === newKey);
+            if (collision) return send(409, { error: "Another song already uses this title + artist" });
+            db.songs[id] = next;
+            writeDb(db);
+            return send(200, { song: next });
+          }
+          if (req.method === "DELETE") {
+            if (!isAdmin(req)) return send(401, { error: "Admin token required" });
+            const url = new URL(req.url, "http://localhost");
+            let id = url.searchParams.get("id");
+            if (!id) {
+              const body = await readBody(req);
+              id = body.id;
+            }
+            if (!id) return send(400, { error: "id is required" });
+            const db = readDb();
+            delete db.songs[id];
+            db.ids = db.ids.filter((x) => x !== id);
+            writeDb(db);
+            return send(200, { ok: true, id });
+          }
+          res.setHeader("Allow", "GET, POST, PATCH, DELETE");
           return send(405, { error: "Method not allowed" });
         } catch (e) {
           return send(500, { error: e.message });
         }
+      });
+    },
+  };
+}
+
+function devAdminProxy(adminToken) {
+  return {
+    name: "dev-admin-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/admin", (req, res) => {
+        const send = (status, body) => {
+          res.statusCode = status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(body));
+        };
+        if (req.method !== "POST") {
+          res.setHeader("Allow", "POST");
+          return send(405, { error: "Method not allowed" });
+        }
+        if (req.headers["x-admin-token"] !== adminToken) {
+          return send(401, { error: "Invalid admin token" });
+        }
+        return send(200, { ok: true });
       });
     },
   };
@@ -153,6 +216,18 @@ function rawGzDictFiles() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), rawGzDictFiles(), devLyricsProxy(), devLibraryProxy()],
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  // Dev-only fallback so the admin flow can be tested locally without setting
+  // up a real token. In production Vercel injects ADMIN_TOKEN from its env vars.
+  const adminToken = env.ADMIN_TOKEN || "dev";
+  return {
+    plugins: [
+      react(),
+      rawGzDictFiles(),
+      devLyricsProxy(),
+      devLibraryProxy(adminToken),
+      devAdminProxy(adminToken),
+    ],
+  };
 });

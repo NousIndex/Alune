@@ -3,8 +3,10 @@ import Library from "./components/Library.jsx";
 import Reader from "./components/Reader.jsx";
 import Editor from "./components/Editor.jsx";
 import Notice from "./components/Notice.jsx";
+import AdminGate from "./components/AdminGate.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
-import { getLibrary, addSong } from "./lib/libraryApi.js";
+import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js";
+import { getAdminToken, clearAdminToken } from "./lib/admin.js";
 import {
   lightSearchText,
   getCachedOrBuild,
@@ -18,8 +20,12 @@ export default function App() {
   const [activeId, setActiveId] = useState(null);
   const [search, setSearch] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editingSong, setEditingSong] = useState(null);
   const [railOpen, setRailOpen] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [notice, setNotice] = useState({ open: false, message: "" });
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
   const [searchIndex, setSearchIndex] = useState(() => new Map());
   const [indexProgress, setIndexProgress] = useState({ done: 0, total: 0, finished: false });
 
@@ -77,6 +83,19 @@ export default function App() {
   );
 
   const handleSave = async (form) => {
+    if (form.id) {
+      // Edit path — PATCH the existing song and replace it in the library.
+      const updated = await updateSong(form);
+      setLibrary((lib) => lib.map((s) => (s.id === updated.id ? updated : s)));
+      setActiveId(updated.id);
+      setEditorOpen(false);
+      setEditingSong(null);
+      setSearchIndex((m) => new Map(m).set(updated.id, lightSearchText(updated)));
+      getCachedOrBuild(updated).then((text) => {
+        setSearchIndex((m) => new Map(m).set(updated.id, text));
+      });
+      return;
+    }
     const { song, existed } = await addSong(form);
     setLibrary((lib) =>
       lib.some((s) => s.id === song.id) ? lib : [song, ...lib]
@@ -94,6 +113,38 @@ export default function App() {
     getCachedOrBuild(song).then((text) => {
       setSearchIndex((m) => new Map(m).set(song.id, text));
     });
+  };
+
+  const handleEditActive = () => {
+    if (!activeSong) return;
+    setEditingSong(activeSong);
+    setEditorOpen(true);
+  };
+
+  const handleDeleteActive = async () => {
+    if (!activeSong) return;
+    const ok = window.confirm(
+      `Delete “${activeSong.title}” from the shared library? This can't be undone.`
+    );
+    if (!ok) return;
+    try {
+      await deleteSong(activeSong.id);
+      const removedId = activeSong.id;
+      setLibrary((lib) => lib.filter((s) => s.id !== removedId));
+      setActiveId(null);
+      setSearchIndex((m) => {
+        const next = new Map(m);
+        next.delete(removedId);
+        return next;
+      });
+    } catch (e) {
+      setNotice({ open: true, message: e?.message || "Couldn't delete." });
+    }
+  };
+
+  const handleAdminSignOut = () => {
+    clearAdminToken();
+    setIsAdmin(false);
   };
 
   const toggleRomaji = () =>
@@ -118,6 +169,19 @@ export default function App() {
       >
         {railOpen ? "✕" : "☰"}
       </button>
+      <button
+        className="rail-search-btn"
+        onClick={() => {
+          setRailOpen(true);
+          setSearchFocusToken((t) => t + 1);
+        }}
+        aria-label="Search library"
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          <line x1="15.3" y1="15.3" x2="20" y2="20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
       <div className="rail-backdrop" onClick={() => setRailOpen(false)} />
 
       <Library
@@ -134,6 +198,10 @@ export default function App() {
         }}
         searchIndex={searchIndex}
         indexProgress={indexProgress}
+        searchFocusToken={searchFocusToken}
+        isAdmin={isAdmin}
+        onAdminSignIn={() => setAdminOpen(true)}
+        onAdminSignOut={handleAdminSignOut}
       />
 
       <main className="stage">
@@ -144,6 +212,9 @@ export default function App() {
             settings={settings}
             onToggleRomaji={toggleRomaji}
             onResize={resize}
+            isAdmin={isAdmin}
+            onEdit={handleEditActive}
+            onDelete={handleDeleteActive}
           />
         ) : (
           <div className="center-state">
@@ -161,17 +232,31 @@ export default function App() {
 
       <Editor
         open={editorOpen}
+        initial={editingSong}
         library={library}
         onSave={handleSave}
         onSelectExisting={(song) => {
           setActiveId(song.id);
           setEditorOpen(false);
+          setEditingSong(null);
           setNotice({
             open: true,
             message: `“${song.title}” is already in the library — opening it.`,
           });
         }}
-        onClose={() => setEditorOpen(false)}
+        onClose={() => {
+          setEditorOpen(false);
+          setEditingSong(null);
+        }}
+      />
+
+      <AdminGate
+        open={adminOpen}
+        onClose={() => setAdminOpen(false)}
+        onSignedIn={() => {
+          setIsAdmin(true);
+          setAdminOpen(false);
+        }}
       />
 
       <Notice

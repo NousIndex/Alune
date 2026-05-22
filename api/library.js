@@ -16,6 +16,27 @@ function client() {
   return new Redis({ url, token });
 }
 
+function requireAdmin(req) {
+  const want = process.env.ADMIN_TOKEN;
+  if (!want) {
+    const err = new Error("ADMIN_TOKEN is not configured on the server");
+    err.status = 500;
+    throw err;
+  }
+  if (req.headers["x-admin-token"] !== want) {
+    const err = new Error("Admin token required");
+    err.status = 401;
+    throw err;
+  }
+}
+
+async function loadSong(redis, id) {
+  const raw = await redis.get(songKey(id));
+  if (!raw) return null;
+  const song = typeof raw === "string" ? JSON.parse(raw) : raw;
+  return { ...song, id };
+}
+
 async function listAll(redis) {
   const ids = await redis.lrange(INDEX_KEY, 0, -1);
   if (!ids.length) return [];
@@ -76,6 +97,68 @@ async function addSong(redis, body) {
   return { song, existed: false };
 }
 
+async function updateSong(redis, body) {
+  const id = (body?.id || "").trim();
+  if (!id) {
+    const err = new Error("id is required");
+    err.status = 400;
+    throw err;
+  }
+  const current = await loadSong(redis, id);
+  if (!current) {
+    const err = new Error("Song not found");
+    err.status = 404;
+    throw err;
+  }
+
+  // Only allow these fields to be patched.
+  const next = { ...current };
+  if (typeof body.title === "string") next.title = body.title.trim() || "Untitled";
+  if (typeof body.artist === "string") next.artist = body.artist.trim();
+  if (typeof body.lang === "string") next.lang = body.lang;
+  if (typeof body.lyrics === "string") next.lyrics = body.lyrics;
+  next.id = id;
+  next.updatedAt = Date.now();
+
+  const oldKey = dedupKey(current.title, current.artist);
+  const newKey = dedupKey(next.title, next.artist);
+
+  if (oldKey !== newKey) {
+    // Refuse if the new (title, artist) combo collides with another song.
+    const owner = await redis.get(dedupRedisKey(newKey));
+    if (owner && owner !== id) {
+      const err = new Error("Another song already uses this title + artist");
+      err.status = 409;
+      throw err;
+    }
+    // Claim the new key for this id and release the old one. (Not atomic with
+    // a concurrent edit of the same song, but single-admin so the race window
+    // is fine.)
+    await redis.set(dedupRedisKey(newKey), id);
+    await redis.del(dedupRedisKey(oldKey));
+  }
+
+  await redis.set(songKey(id), JSON.stringify(next));
+  return { song: next };
+}
+
+async function deleteSong(redis, id) {
+  if (!id) {
+    const err = new Error("id is required");
+    err.status = 400;
+    throw err;
+  }
+  const current = await loadSong(redis, id);
+  // Always clean up the list + song record even if the song record was already
+  // gone, so we don't leave dangling ids in the index.
+  await redis.lrem(INDEX_KEY, 0, id);
+  await redis.del(songKey(id));
+  if (current) {
+    await redis.del(dedupRedisKey(dedupKey(current.title, current.artist)));
+  }
+  return { ok: true, id };
+}
+
 export default async function handler(req, res) {
   try {
     const redis = client();
@@ -87,9 +170,22 @@ export default async function handler(req, res) {
       const { song, existed } = await addSong(redis, req.body);
       return res.status(existed ? 200 : 201).json({ song, existed });
     }
-    res.setHeader("Allow", "GET, POST");
+    if (req.method === "PATCH") {
+      requireAdmin(req);
+      const { song } = await updateSong(redis, req.body);
+      return res.status(200).json({ song });
+    }
+    if (req.method === "DELETE") {
+      requireAdmin(req);
+      const id =
+        (req.body && req.body.id) ||
+        new URL(req.url, "http://localhost").searchParams.get("id");
+      const result = await deleteSong(redis, id);
+      return res.status(200).json(result);
+    }
+    res.setHeader("Allow", "GET, POST, PATCH, DELETE");
     return res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
-    return res.status(500).json({ error: e.message });
+    return res.status(e.status || 500).json({ error: e.message });
   }
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HAN, KANA, HANGUL } from "../lib/romanize.js";
 
 const FILTERS = [
@@ -33,8 +33,27 @@ export default function Library({
   onAdd,
   searchIndex,
   indexProgress,
+  searchFocusToken,
+  isAdmin,
+  onAdminSignIn,
+  onAdminSignOut,
 }) {
   const [filter, setFilter] = useState("all");
+  const searchRef = useRef(null);
+
+  // Focus the search input whenever the parent bumps the token (mobile
+  // search button taps after sliding the rail in).
+  useEffect(() => {
+    if (!searchFocusToken) return;
+    const el = searchRef.current;
+    if (!el) return;
+    // Defer so the focus lands after the rail slide-in transition kicks off.
+    const id = requestAnimationFrame(() => {
+      el.focus();
+      el.select?.();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [searchFocusToken]);
 
   // Detect each song's language once per library change.
   const langById = useMemo(() => {
@@ -71,6 +90,7 @@ export default function Library({
 
       <div className="rail-tools">
         <input
+          ref={searchRef}
           className="search"
           placeholder="Search by title, pinyin, romaji…"
           value={search}
@@ -128,6 +148,23 @@ export default function Library({
       </div>
 
       <div className="rail-foot">
+        {isAdmin ? (
+          <button
+            className="admin-link signed-in"
+            onClick={onAdminSignOut}
+            title="Sign out of admin mode"
+          >
+            admin · signed in
+          </button>
+        ) : (
+          <button
+            className="admin-link"
+            onClick={onAdminSignIn}
+            title="Sign in as admin to edit / delete songs"
+          >
+            admin
+          </button>
+        )}
         {indexing && (
           <span className="idx-hint">
             indexing {indexProgress.done}/{indexProgress.total}
