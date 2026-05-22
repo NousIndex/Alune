@@ -178,24 +178,20 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
           <div className="field-row">
             <label>Lyrics</label>
             <div className="fetch-controls">
-              <div className="seg seg-compact" role="group" aria-label="Lyrics source">
+              <select
+                className="source-select"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                disabled={fetchState.loading}
+                aria-label="Lyrics source"
+                title="Choose which lyrics provider to use"
+              >
                 {SOURCES.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={source === s.id ? "sel" : ""}
-                    onClick={() => setSource(s.id)}
-                    disabled={fetchState.loading}
-                    title={
-                      s.id === "auto"
-                        ? "Try Musixmatch, fall back to YouTube"
-                        : `Force ${s.label} source`
-                    }
-                  >
+                  <option key={s.id} value={s.id}>
                     {s.label}
-                  </button>
+                  </option>
                 ))}
-              </div>
+              </select>
               <button
                 type="button"
                 className="btn ghost sm"

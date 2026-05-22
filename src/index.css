@@ -610,6 +610,27 @@ rt {
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
 .field-row label { margin: 0; }
 .fetch-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.source-select {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  border-radius: 8px;
+  padding: 6px 28px 6px 10px;
+  font-family: inherit;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='none' stroke='%23caa169' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.source-select:hover:not(:disabled) { border-color: var(--amber-soft); color: var(--paper); }
+.source-select:focus { outline: none; border-color: var(--amber-soft); }
+.source-select:disabled { opacity: 0.45; cursor: not-allowed; }
+.source-select option { background: var(--panel); color: var(--paper); }
 .seg.seg-compact { gap: 0; flex-wrap: nowrap; }
 .seg.seg-compact button {
   flex: 0 0 auto;
