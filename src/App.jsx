@@ -4,6 +4,7 @@ import Reader from "./components/Reader.jsx";
 import Editor from "./components/Editor.jsx";
 import Notice from "./components/Notice.jsx";
 import AdminGate from "./components/AdminGate.jsx";
+import SearchOverlay from "./components/SearchOverlay.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
 import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js";
 import { getAdminToken, clearAdminToken } from "./lib/admin.js";
@@ -22,7 +23,7 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingSong, setEditingSong] = useState(null);
   const [railOpen, setRailOpen] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
   const [notice, setNotice] = useState({ open: false, message: "" });
   const [adminOpen, setAdminOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
@@ -171,10 +172,7 @@ export default function App() {
       </button>
       <button
         className="rail-search-btn"
-        onClick={() => {
-          setRailOpen(true);
-          setSearchFocusToken((t) => t + 1);
-        }}
+        onClick={() => setSearchOverlayOpen(true)}
         aria-label="Search library"
       >
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -198,7 +196,6 @@ export default function App() {
         }}
         searchIndex={searchIndex}
         indexProgress={indexProgress}
-        searchFocusToken={searchFocusToken}
         isAdmin={isAdmin}
         onAdminSignIn={() => setAdminOpen(true)}
         onAdminSignOut={handleAdminSignOut}
@@ -257,6 +254,14 @@ export default function App() {
           setIsAdmin(true);
           setAdminOpen(false);
         }}
+      />
+
+      <SearchOverlay
+        open={searchOverlayOpen}
+        library={library}
+        searchIndex={searchIndex}
+        onSelect={(id) => setActiveId(id)}
+        onClose={() => setSearchOverlayOpen(false)}
       />
 
       <Notice
