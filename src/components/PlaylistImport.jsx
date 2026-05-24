@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchPlaylist } from "../lib/playlistApi.js";
 import { fetchLyrics, getRateLimitStatus, onRateLimitChange } from "../lib/lyricsApi.js";
 import { addSong } from "../lib/libraryApi.js";
@@ -6,11 +6,16 @@ import { resolveAliasOrOriginal } from "../lib/aliasApi.js";
 import { toCsv, downloadCsv } from "../lib/csv.js";
 
 const PHASE = {
-  INPUT: "input",      // typing the URL
-  PREVIEW: "preview",  // tracklist fetched, awaiting confirmation
-  IMPORTING: "importing",
+  INPUT: "input",        // typing the URL
+  PREVIEW: "preview",    // tracklist fetched, awaiting confirmation
+  IMPORTING: "importing", // round 1: title + artist
+  RETRYING: "retrying",  // round 2: title-only search for round-1 failures
+  REVIEW: "review",      // approve/reject the title-only candidates
+  SAVING: "saving",      // committing approved candidates
   DONE: "done",
 };
+
+const LYRICS_PREVIEW_LINES = 4;
 
 const MIN_LYRIC_CHARS = 20;
 // One at a time. The lyrics API caps us at ~10 calls/min, so concurrency > 1
@@ -91,6 +96,9 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   const [selected, setSelected] = useState(new Set()); // indexes into tracks
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [results, setResults] = useState(null); // { added, existed, failed }
+  // Round-2 review state: candidates found via title-only search, plus the
+  // running tallies carried over from round 1 so we can finalize after review.
+  const [review, setReview] = useState(null); // { candidates, carry: { added, existed, failed } }
 
   useEffect(() => {
     if (open) {
@@ -102,6 +110,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       setSelected(new Set());
       setProgress({ done: 0, total: 0, current: "" });
       setResults(null);
+      setReview(null);
     }
   }, [open]);
 
@@ -109,7 +118,8 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       // Don't let Escape kill an import mid-flight — easy to lose progress.
-      if (phase === PHASE.IMPORTING) return;
+      if (phase === PHASE.IMPORTING || phase === PHASE.RETRYING || phase === PHASE.SAVING)
+        return;
       // If the user is editing a field, the first Escape blurs the input
       // instead of closing the whole modal (avoids losing typed edits).
       const ae = document.activeElement;
@@ -251,11 +261,13 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
         try {
           lyricsData = await fetchLyrics({ title: t.title, artist: t.artist });
         } catch (e) {
+          // kind:'search' marks this as eligible for the round-2 title-only retry.
           failed.push({
             title: t.title,
             artist: t.artist,
             reason: e?.message || "Lyrics not found",
             url: t.externalUrl || "",
+            kind: "search",
           });
           return;
         }
@@ -274,6 +286,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
             artist: finalArtist,
             reason: "Lyrics too short to save",
             url: t.externalUrl || "",
+            kind: "search",
           });
           return;
         }
@@ -288,11 +301,13 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
           if (wasExisting) existed.push({ title: song.title, artist: song.artist, id: song.id });
           else added.push({ title: song.title, artist: song.artist, id: song.id });
         } catch (e) {
+          // Save failures aren't search problems — don't retry these.
           failed.push({
             title: finalTitle,
             artist: finalArtist,
             reason: e?.message || "Couldn't save",
             url: t.externalUrl || "",
+            kind: "save",
           });
         }
       },
@@ -303,9 +318,117 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       }
     );
 
-    setResults({ added, existed, failed });
+    // Round 2: retry search failures with title only. These are riskier (a
+    // title-only match can be the wrong artist), so we collect them for review
+    // instead of adding them straight away.
+    const retryable = failed.filter((f) => f.kind === "search");
+    const carryFailed = failed.filter((f) => f.kind !== "search");
+
+    if (retryable.length) {
+      setPhase(PHASE.RETRYING);
+      setProgress({ done: 0, total: retryable.length, current: retryable[0]?.title || "" });
+      const candidates = [];
+      await runWithConcurrency(
+        retryable,
+        async (f) => {
+          try {
+            const data = await fetchLyrics({ title: f.title }); // title only
+            const lyrics = (data.lyrics || "").trim();
+            if (lyrics.length < MIN_LYRIC_CHARS) {
+              carryFailed.push({ ...f, reason: "Title-only search: no usable lyrics" });
+              return;
+            }
+            candidates.push({
+              searchedTitle: f.title,
+              searchedArtist: f.artist,
+              title: data.trackName || f.title,
+              artist: data.artistName || "",
+              lyrics,
+              url: f.url,
+            });
+          } catch (e) {
+            carryFailed.push({
+              ...f,
+              reason: e?.message || "Title-only search failed too",
+            });
+          }
+        },
+        CONCURRENCY,
+        (done, total, _r, idx) => {
+          const next = retryable[idx + 1];
+          setProgress({ done, total, current: next ? next.title : "" });
+        }
+      );
+
+      if (candidates.length) {
+        setReview({ candidates, carry: { added, existed, failed: carryFailed } });
+        setPhase(PHASE.REVIEW);
+        return;
+      }
+      // Round 2 found nothing usable — finish with what we have.
+      finalize({ added, existed, failed: carryFailed });
+      return;
+    }
+
+    finalize({ added, existed, failed });
+  };
+
+  // Commit the final tallies and surface the results screen.
+  const finalize = (res) => {
+    setResults(res);
     setPhase(PHASE.DONE);
-    onImported?.({ added, existed, failed });
+    onImported?.(res);
+  };
+
+  // Called from the review screen: save the approved title-only candidates,
+  // route the rest to the failed list, then finish.
+  const commitReview = async (approved, rejected) => {
+    if (!review) return;
+    setPhase(PHASE.SAVING);
+    setProgress({ done: 0, total: approved.length, current: approved[0]?.title || "" });
+    const added = [...review.carry.added];
+    const existed = [...review.carry.existed];
+    const failed = [...review.carry.failed];
+
+    await runWithConcurrency(
+      approved,
+      async (c) => {
+        const finalArtist = c.artist ? await resolveAliasOrOriginal(c.artist) : "";
+        try {
+          const { song, existed: wasExisting } = await addSong({
+            title: c.title,
+            artist: finalArtist,
+            lang: "auto",
+            lyrics: c.lyrics,
+          });
+          if (wasExisting) existed.push({ title: song.title, artist: song.artist, id: song.id });
+          else added.push({ title: song.title, artist: song.artist, id: song.id });
+        } catch (e) {
+          failed.push({
+            title: c.title,
+            artist: finalArtist,
+            reason: e?.message || "Couldn't save",
+            url: c.url || "",
+          });
+        }
+      },
+      CONCURRENCY,
+      (done, total, _r, idx) => {
+        const next = approved[idx + 1];
+        setProgress({ done, total, current: next ? next.title : "" });
+      }
+    );
+
+    for (const c of rejected) {
+      failed.push({
+        title: c.searchedTitle,
+        artist: c.searchedArtist,
+        reason: "Rejected after title-only review",
+        url: c.url || "",
+      });
+    }
+
+    finalize({ added, existed, failed });
   };
 
   const downloadFailuresCsv = () => {
@@ -331,9 +454,13 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   return (
     <div
       className="scrim open"
-      onClick={(e) =>
-        e.target.classList.contains("scrim") && phase !== PHASE.IMPORTING && onClose()
-      }
+      onClick={(e) => {
+        const busy =
+          phase === PHASE.IMPORTING ||
+          phase === PHASE.RETRYING ||
+          phase === PHASE.SAVING;
+        if (e.target.classList.contains("scrim") && !busy) onClose();
+      }}
     >
       <div className="modal modal-wide">
         <h2>Import a playlist</h2>
@@ -388,7 +515,27 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
         )}
 
         {phase === PHASE.IMPORTING && (
-          <ImportingView progress={progress} />
+          <ImportingView progress={progress} label="Importing — searching by title + artist" />
+        )}
+
+        {phase === PHASE.RETRYING && (
+          <ImportingView
+            progress={progress}
+            label="Round 2 — retrying failures with title only"
+            note="These matches need your review before they're saved."
+          />
+        )}
+
+        {phase === PHASE.SAVING && (
+          <ImportingView progress={progress} label="Saving approved tracks" />
+        )}
+
+        {phase === PHASE.REVIEW && review && (
+          <ReviewList
+            candidates={review.candidates}
+            onCommit={commitReview}
+            onCancel={() => finalize(review.carry)}
+          />
         )}
 
         {phase === PHASE.DONE && results && (
@@ -542,7 +689,7 @@ function PreviewList({
   );
 }
 
-function ImportingView({ progress }) {
+function ImportingView({ progress, label, note }) {
   const pct = progress.total
     ? Math.min(100, Math.round((progress.done / progress.total) * 100))
     : 0;
@@ -566,6 +713,7 @@ function ImportingView({ progress }) {
 
   return (
     <div className="import-progress">
+      {label && <div className="progress-label">{label}</div>}
       <div className="progress-bar">
         <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
@@ -585,12 +733,111 @@ function ImportingView({ progress }) {
           {rate.used >= rate.budget ? ` (${rate.used}/${rate.budget} used in the last minute)` : ""}…
         </div>
       )}
+      {note && <div className="hint">{note}</div>}
       <div className="hint">
         Lyrics fetches are capped at {rate.budget}/min to stay under the upstream
         limit. Rough ETA: ~{etaText}. Long playlists will pause periodically while
         the window resets — that's expected.
       </div>
     </div>
+  );
+}
+
+function ReviewList({ candidates, onCommit, onCancel }) {
+  // Editable local copy + per-row approve flag (default approved).
+  const [rows, setRows] = useState(() =>
+    candidates.map((c) => ({ ...c, approved: true }))
+  );
+
+  const edit = (i, field, value) =>
+    setRows((prev) => {
+      const next = prev.slice();
+      next[i] = { ...next[i], [field]: value };
+      return next;
+    });
+  const toggle = (i) =>
+    setRows((prev) => {
+      const next = prev.slice();
+      next[i] = { ...next[i], approved: !next[i].approved };
+      return next;
+    });
+  const setAll = (on) => setRows((prev) => prev.map((r) => ({ ...r, approved: on })));
+
+  const approvedCount = rows.filter((r) => r.approved).length;
+  const allOn = approvedCount === rows.length;
+
+  const commit = () => {
+    const approved = rows.filter((r) => r.approved);
+    const rejected = rows.filter((r) => !r.approved);
+    onCommit(approved, rejected);
+  };
+
+  return (
+    <>
+      <div className="review-head">
+        <strong>Review title-only matches ({rows.length})</strong>
+        <p className="hint">
+          These weren't found by title + artist, so we searched by title alone.
+          A title-only match can be the wrong song or artist — check the lyrics
+          preview, fix the fields if needed, then approve the ones to add.
+        </p>
+      </div>
+      <div className="playlist-tools">
+        <button className="btn text sm" onClick={() => setAll(!allOn)}>
+          {allOn ? "Reject all" : "Approve all"}
+        </button>
+        <span className="muted">{approvedCount} to add</span>
+      </div>
+      <ul className="review-list">
+        {rows.map((r, i) => (
+          <li key={i} className={r.approved ? "" : "off"}>
+            <div className="review-row">
+              <input
+                type="checkbox"
+                className="track-check"
+                checked={r.approved}
+                onChange={() => toggle(i)}
+                aria-label="Approve this match"
+              />
+              <div className="review-body">
+                <div className="review-fields">
+                  <input
+                    className="t-input"
+                    value={r.title}
+                    onChange={(e) => edit(i, "title", e.target.value)}
+                    placeholder="Title"
+                    spellCheck={false}
+                  />
+                  <input
+                    className={"a-input" + (r.artist ? "" : " empty")}
+                    value={r.artist}
+                    onChange={(e) => edit(i, "artist", e.target.value)}
+                    placeholder="Artist (optional)"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="review-meta">
+                  searched: <span className="q">{r.searchedTitle}</span>
+                  {r.searchedArtist ? ` + ${r.searchedArtist}` : " (title only)"}
+                </div>
+                <pre className="lyrics-preview">
+                  {r.lyrics.split("\n").slice(0, LYRICS_PREVIEW_LINES).join("\n")}
+                  {r.lyrics.split("\n").length > LYRICS_PREVIEW_LINES ? "\n…" : ""}
+                </pre>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="modal-actions">
+        <button className="btn text" onClick={onCancel}>Skip all</button>
+        <button className="btn primary" onClick={commit}>
+          {approvedCount > 0
+            ? `Add ${approvedCount} approved`
+            : "Finish (add none)"}
+        </button>
+      </div>
+    </>
   );
 }
 

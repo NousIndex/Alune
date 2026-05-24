@@ -934,6 +934,81 @@ rt {
 }
 
 .dup-summary { color: var(--jade); }
+
+/* ---------------- Round-2 review ---------------- */
+.review-head { margin-bottom: 8px; }
+.review-head strong { color: var(--paper); font-size: 0.95rem; }
+.review-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink);
+}
+.review-list li {
+  border-bottom: 1px solid var(--line);
+}
+.review-list li:last-child { border-bottom: none; }
+.review-list li.off { opacity: 0.5; }
+.review-row {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  align-items: start;
+}
+.review-body { min-width: 0; }
+.review-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.review-fields .t-input,
+.review-fields .a-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  color: var(--paper);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.review-fields .t-input { font-size: 0.92rem; font-weight: 500; }
+.review-fields .a-input { font-size: 0.78rem; color: var(--paper-dim); }
+.review-fields .a-input.empty { color: var(--rose); font-style: italic; }
+.review-fields .t-input:hover,
+.review-fields .a-input:hover { border-color: var(--line); }
+.review-fields .t-input:focus,
+.review-fields .a-input:focus {
+  outline: none;
+  border-color: var(--amber-soft);
+  background: var(--ink-2);
+}
+.review-meta {
+  font-size: 0.72rem;
+  color: var(--paper-faint);
+  margin: 4px 8px 0;
+}
+.review-meta .q { color: var(--amber-soft); }
+.lyrics-preview {
+  margin: 6px 8px 0;
+  padding: 8px 10px;
+  background: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: "Newsreader", "Noto Serif SC", "Noto Serif JP", serif;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--paper-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 110px;
+  overflow-y: auto;
+}
 .track-list input[type="checkbox"] {
   accent-color: var(--amber);
   width: 16px;
@@ -983,6 +1058,12 @@ rt {
 @keyframes indet {
   from { transform: translateX(-30%); }
   to { transform: translateX(230%); }
+}
+.progress-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--amber-soft);
 }
 .progress-text { font-size: 0.88rem; color: var(--paper); }
 .progress-text .muted { color: var(--paper-faint); margin-left: 6px; }
