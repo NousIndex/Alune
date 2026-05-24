@@ -4,6 +4,7 @@ import { fetchLyrics, getRateLimitStatus, onRateLimitChange } from "../lib/lyric
 import { addSong } from "../lib/libraryApi.js";
 import { resolveAliasOrOriginal } from "../lib/aliasApi.js";
 import { toCsv, downloadCsv } from "../lib/csv.js";
+import { buildLibIndex, findExistingFolded } from "../lib/dedup.js";
 
 const PHASE = {
   INPUT: "input",        // typing the URL
@@ -22,50 +23,6 @@ const MIN_LYRIC_CHARS = 20;
 // doesn't speed anything up — the shared limiter in lyricsApi.js serializes
 // them anyway. Keeping it at 1 also makes "current track" in the UI accurate.
 const CONCURRENCY = 1;
-
-// Normalize that matches Editor.jsx's findExisting() — keeps the dedup logic
-// consistent between manual add and bulk import.
-const norm = (s) =>
-  (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
-
-// Returns { song, match } when a likely duplicate is found, else null.
-//   match: 'strict' — title + artist match exactly
-//          'alias'  — title matches AND one artist is a substring of the other
-//                     (catches "Joker Xue" already saved as "薛之谦 Joker Xue")
-//          'title'  — title matches and is unique in the library; artist differs
-// The import loop also has alias-resolution-aware dedup as a safety net.
-function findExistingInLibrary(library, title, artist) {
-  const t = norm(title);
-  if (!t) return null;
-  const a = norm(artist);
-
-  if (a) {
-    const strict = library.find(
-      (s) => norm(s.title) === t && norm(s.artist) === a
-    );
-    if (strict) return { song: strict, match: "strict" };
-
-    // Nested-artist match: handles "Joker Xue" in playlist vs the library
-    // entry's already-combined "薛之谦 Joker Xue". Require ≥2 chars to avoid
-    // accidental matches on single-character substrings.
-    if (a.length >= 2) {
-      const sameTitle = library.filter((s) => norm(s.title) === t);
-      const nested = sameTitle.find((s) => {
-        const la = norm(s.artist);
-        if (!la) return false;
-        return la.includes(a) || a.includes(la);
-      });
-      if (nested) return { song: nested, match: "alias" };
-    }
-  }
-
-  // Title-only match — only when unambiguous (one song with this title).
-  const matchesTitle = library.filter((s) => norm(s.title) === t);
-  if (matchesTitle.length === 1) {
-    return { song: matchesTitle[0], match: "title" };
-  }
-  return null;
-}
 
 async function runWithConcurrency(items, worker, concurrency, onProgress) {
   const results = new Array(items.length);
@@ -135,6 +92,11 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
 
   const canFetch = url.trim().length > 0 && phase === PHASE.INPUT;
 
+  // Precompute folded dedup keys for the whole library once. Han titles fold
+  // to toneless pinyin so Traditional/Simplified variants match
+  // (專屬天使 / 专属天使). Rebuilt only when the library reference changes.
+  const libIndex = useMemo(() => buildLibIndex(library), [library]);
+
   const onFetchTracklist = async () => {
     setFetchError("");
     try {
@@ -152,7 +114,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       // they can re-check it manually if the match is wrong.
       const initial = new Set();
       cloned.forEach((t, i) => {
-        if (!findExistingInLibrary(library, t.title, t.artist)) initial.add(i);
+        if (!findExistingFolded(libIndex, t.title, t.artist)) initial.add(i);
       });
       setSelected(initial);
       setPhase(PHASE.PREVIEW);
@@ -211,8 +173,8 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   // is purely informational so the user can deliberately re-check rows whose
   // metadata they've corrected.
   const dedupStatuses = useMemo(
-    () => tracks.map((t) => findExistingInLibrary(library, t.title, t.artist)),
-    [tracks, library]
+    () => tracks.map((t) => findExistingFolded(libIndex, t.title, t.artist)),
+    [tracks, libIndex]
   );
 
   // Re-apply the "deselect duplicates" rule on demand (toolbar button below).
@@ -250,8 +212,8 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
 
         // Pre-check the local library so we don't waste a lyrics fetch on dupes.
         const pre =
-          findExistingInLibrary(library, t.title, resolvedArtist) ||
-          findExistingInLibrary(library, t.title, t.artist);
+          findExistingFolded(libIndex, t.title, resolvedArtist) ||
+          findExistingFolded(libIndex, t.title, t.artist);
         if (pre) {
           existed.push({ title: t.title, artist: resolvedArtist || t.artist, id: pre.song.id });
           return;

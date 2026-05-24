@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchLyrics } from "../lib/lyricsApi";
 import { resolveAliasOrOriginal } from "../lib/aliasApi";
+import { buildLibIndex, findExistingFolded } from "../lib/dedup";
 
 const HAN_RE = /[㐀-鿿]/;
 const LATIN_RE = /[A-Za-z]/;
@@ -25,31 +26,16 @@ const SOURCES = [
   { id: "youtube", label: "YouTube" },
 ];
 
-const norm = (s) =>
-  (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
-// Strict dedup matches the server (title + artist). Loose match (title only)
-// is used as a secondary pre-check when the user hasn't entered an artist yet.
-function findExisting(library, title, artist) {
-  const t = norm(title);
-  if (!t) return null;
-  const a = norm(artist);
-  if (a) {
-    const strict = library.find(
-      (s) => norm(s.title) === t && norm(s.artist) === a
-    );
-    if (strict) return strict;
-  }
-  const matchesTitle = library.filter((s) => norm(s.title) === t);
-  // Only auto-match by title alone if it's unambiguous.
-  return matchesTitle.length === 1 ? matchesTitle[0] : null;
-}
-
 export default function Editor({ open, initial, library, onSave, onSelectExisting, onClose }) {
   const [form, setForm] = useState(EMPTY);
   const [fetchState, setFetchState] = useState({ loading: false, error: "" });
   const [saveState, setSaveState] = useState({ saving: false, error: "" });
   const [source, setSource] = useState("auto");
   const [langInfoOpen, setLangInfoOpen] = useState(false);
+
+  // Folded dedup index so the pre-save existing-song check matches across
+  // Traditional/Simplified variants, same as the bulk importer.
+  const libIndex = useMemo(() => buildLibIndex(library || []), [library]);
 
   useEffect(() => {
     if (open) {
@@ -78,9 +64,9 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
     //    case where the user has typed enough to identify a song already saved.
     //    Skip in edit mode — finding the song you're editing isn't a dup.
     if (!isEdit) {
-      const existingNow = findExisting(library || [], form.title, form.artist);
+      const existingNow = findExistingFolded(libIndex, form.title, form.artist);
       if (existingNow) {
-        onSelectExisting?.(existingNow);
+        onSelectExisting?.(existingNow.song);
         return;
       }
     }
@@ -94,9 +80,9 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
       const fetchedTitle = data.trackName || form.title;
       const fetchedArtist = data.artistName || form.artist;
       if (!isEdit) {
-        const existingAfter = findExisting(library || [], fetchedTitle, fetchedArtist);
+        const existingAfter = findExistingFolded(libIndex, fetchedTitle, fetchedArtist);
         if (existingAfter) {
-          onSelectExisting?.(existingAfter);
+          onSelectExisting?.(existingAfter.song);
           return;
         }
       }
