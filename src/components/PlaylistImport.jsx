@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchPlaylist } from "../lib/playlistApi.js";
 import { fetchLyrics, getRateLimitStatus, onRateLimitChange } from "../lib/lyricsApi.js";
 import { addSong } from "../lib/libraryApi.js";
@@ -23,12 +23,41 @@ const CONCURRENCY = 1;
 const norm = (s) =>
   (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
 
+// Returns { song, match } when a likely duplicate is found, else null.
+//   match: 'strict' — title + artist match exactly
+//          'alias'  — title matches AND one artist is a substring of the other
+//                     (catches "Joker Xue" already saved as "薛之谦 Joker Xue")
+//          'title'  — title matches and is unique in the library; artist differs
+// The import loop also has alias-resolution-aware dedup as a safety net.
 function findExistingInLibrary(library, title, artist) {
   const t = norm(title);
   if (!t) return null;
   const a = norm(artist);
+
   if (a) {
-    return library.find((s) => norm(s.title) === t && norm(s.artist) === a) || null;
+    const strict = library.find(
+      (s) => norm(s.title) === t && norm(s.artist) === a
+    );
+    if (strict) return { song: strict, match: "strict" };
+
+    // Nested-artist match: handles "Joker Xue" in playlist vs the library
+    // entry's already-combined "薛之谦 Joker Xue". Require ≥2 chars to avoid
+    // accidental matches on single-character substrings.
+    if (a.length >= 2) {
+      const sameTitle = library.filter((s) => norm(s.title) === t);
+      const nested = sameTitle.find((s) => {
+        const la = norm(s.artist);
+        if (!la) return false;
+        return la.includes(a) || a.includes(la);
+      });
+      if (nested) return { song: nested, match: "alias" };
+    }
+  }
+
+  // Title-only match — only when unambiguous (one song with this title).
+  const matchesTitle = library.filter((s) => norm(s.title) === t);
+  if (matchesTitle.length === 1) {
+    return { song: matchesTitle[0], match: "title" };
   }
   return null;
 }
@@ -106,10 +135,16 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
         return;
       }
       setPlaylist({ source: data.source, playlistTitle: data.playlistTitle });
-      // Shallow-clone so swap edits don't mutate the response object.
-      setTracks(incoming.map((t) => ({ ...t })));
-      // Pre-select all tracks; user can untick any they want to skip.
-      setSelected(new Set(incoming.map((_, i) => i)));
+      const cloned = incoming.map((t) => ({ ...t }));
+      setTracks(cloned);
+      // Auto-deselect anything that looks like it's already in the library.
+      // The badge stays visible so the user knows why a row is unchecked —
+      // they can re-check it manually if the match is wrong.
+      const initial = new Set();
+      cloned.forEach((t, i) => {
+        if (!findExistingInLibrary(library, t.title, t.artist)) initial.add(i);
+      });
+      setSelected(initial);
       setPhase(PHASE.PREVIEW);
     } catch (e) {
       setFetchError(e.message || "Couldn't fetch the playlist.");
@@ -161,6 +196,26 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
     });
   };
 
+  // Per-track dedup status, recomputed live as the user edits inputs or swaps.
+  // We only auto-deselect on the initial fetch (above); after that, the badge
+  // is purely informational so the user can deliberately re-check rows whose
+  // metadata they've corrected.
+  const dedupStatuses = useMemo(
+    () => tracks.map((t) => findExistingInLibrary(library, t.title, t.artist)),
+    [tracks, library]
+  );
+
+  // Re-apply the "deselect duplicates" rule on demand (toolbar button below).
+  const deselectDuplicates = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      dedupStatuses.forEach((dup, i) => {
+        if (dup) next.delete(i);
+      });
+      return next;
+    });
+  };
+
   const startImport = async () => {
     if (!tracks.length) return;
     const queue = tracks
@@ -188,7 +243,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
           findExistingInLibrary(library, t.title, resolvedArtist) ||
           findExistingInLibrary(library, t.title, t.artist);
         if (pre) {
-          existed.push({ title: t.title, artist: resolvedArtist || t.artist, id: pre.id });
+          existed.push({ title: t.title, artist: resolvedArtist || t.artist, id: pre.song.id });
           return;
         }
 
@@ -318,9 +373,11 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
             playlist={playlist}
             tracks={tracks}
             selected={selected}
+            dedupStatuses={dedupStatuses}
             onToggle={toggleTrack}
             onSelectAll={() => setAll(true)}
             onSelectNone={() => setAll(false)}
+            onDeselectDuplicates={deselectDuplicates}
             onSwap={swapTrack}
             onSwapAll={swapAllSelected}
             onEdit={editTrack}
@@ -350,9 +407,11 @@ function PreviewList({
   playlist,
   tracks,
   selected,
+  dedupStatuses,
   onToggle,
   onSelectAll,
   onSelectNone,
+  onDeselectDuplicates,
   onSwap,
   onSwapAll,
   onEdit,
@@ -361,6 +420,7 @@ function PreviewList({
   totalSelected,
 }) {
   const allOn = selected.size === tracks.length;
+  const dupCount = dedupStatuses.filter(Boolean).length;
   return (
     <>
       <div className="playlist-meta">
@@ -371,10 +431,24 @@ function PreviewList({
         </span>
         <span className="meta-sep">·</span>
         <span>{tracks.length} tracks</span>
+        {dupCount > 0 && (
+          <>
+            <span className="meta-sep">·</span>
+            <span className="dup-summary">{dupCount} already in library</span>
+          </>
+        )}
       </div>
       <div className="playlist-tools">
         <button className="btn text sm" onClick={allOn ? onSelectNone : onSelectAll}>
           {allOn ? "Deselect all" : "Select all"}
+        </button>
+        <button
+          className="btn text sm"
+          onClick={onDeselectDuplicates}
+          disabled={dupCount === 0}
+          title="Uncheck every row marked as already in the library (use this again after editing)"
+        >
+          Skip duplicates
         </button>
         <button
           className="btn text sm"
@@ -387,52 +461,72 @@ function PreviewList({
         <span className="muted">{totalSelected} selected</span>
       </div>
       <div className="hint">
-        Tap a field to edit. Use ⇄ on a row to swap title and artist, or the
-        toolbar swap to flip every selected track at once.
+        Tap a field to edit. Rows tagged <em>in library</em> are auto-skipped —
+        re-check them if the match looks wrong. Use ⇄ to swap title and artist
+        on any row.
       </div>
       <ul className="track-list">
-        {tracks.map((t, i) => (
-          <li key={i} className={selected.has(i) ? "" : "off"}>
-            <div className="track-row">
-              <input
-                type="checkbox"
-                className="track-check"
-                checked={selected.has(i)}
-                onChange={() => onToggle(i)}
-                aria-label="Include this track in the import"
-              />
-              <div className="track-fields">
+        {tracks.map((t, i) => {
+          const dup = dedupStatuses[i];
+          return (
+            <li
+              key={i}
+              className={
+                (selected.has(i) ? "" : "off ") +
+                (dup ? "dup-" + dup.match : "")
+              }
+            >
+              <div className="track-row">
                 <input
-                  type="text"
-                  className="t-input"
-                  value={t.title}
-                  onChange={(e) => onEdit(i, "title", e.target.value)}
-                  placeholder="Title"
-                  aria-label="Song title"
-                  spellCheck={false}
+                  type="checkbox"
+                  className="track-check"
+                  checked={selected.has(i)}
+                  onChange={() => onToggle(i)}
+                  aria-label="Include this track in the import"
                 />
-                <input
-                  type="text"
-                  className={"a-input" + (t.artist ? "" : " empty")}
-                  value={t.artist}
-                  onChange={(e) => onEdit(i, "artist", e.target.value)}
-                  placeholder="Artist (leave blank to search by title only)"
-                  aria-label="Artist"
-                  spellCheck={false}
-                />
+                <div className="track-fields">
+                  <div className="t-row">
+                    <input
+                      type="text"
+                      className="t-input"
+                      value={t.title}
+                      onChange={(e) => onEdit(i, "title", e.target.value)}
+                      placeholder="Title"
+                      aria-label="Song title"
+                      spellCheck={false}
+                    />
+                    {dup && (
+                      <span
+                        className={"dup-badge " + dup.match}
+                        title={`Library entry: "${dup.song.title}" — ${dup.song.artist || "no artist"}`}
+                      >
+                        {dup.match === "title" ? "title in library" : "in library"}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    className={"a-input" + (t.artist ? "" : " empty")}
+                    value={t.artist}
+                    onChange={(e) => onEdit(i, "artist", e.target.value)}
+                    placeholder="Artist (leave blank to search by title only)"
+                    aria-label="Artist"
+                    spellCheck={false}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="swap-btn"
+                  onClick={() => onSwap(i)}
+                  title="Swap title ↔ artist"
+                  aria-label="Swap title and artist"
+                >
+                  ⇄
+                </button>
               </div>
-              <button
-                type="button"
-                className="swap-btn"
-                onClick={() => onSwap(i)}
-                title="Swap title ↔ artist"
-                aria-label="Swap title and artist"
-              >
-                ⇄
-              </button>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
       <div className="modal-actions">
         <button className="btn text" onClick={onBack}>Back</button>

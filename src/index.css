@@ -894,6 +894,46 @@ rt {
   font-style: normal;
 }
 .track-list .a-input::placeholder { color: var(--paper-faint); font-style: italic; }
+
+.track-list .t-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.track-list .t-row .t-input { flex: 1; min-width: 0; }
+.dup-badge {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.dup-badge.strict,
+.dup-badge.alias {
+  background: rgba(139, 179, 156, 0.14);
+  border-color: var(--jade);
+  color: var(--jade);
+}
+.dup-badge.title {
+  background: rgba(226, 166, 78, 0.12);
+  border-color: var(--amber-soft);
+  color: var(--amber-soft);
+}
+
+/* Subtle row tint to make duplicates visually distinct even when ticked. */
+.track-list li.dup-strict,
+.track-list li.dup-alias {
+  background: rgba(139, 179, 156, 0.04);
+}
+.track-list li.dup-title {
+  background: rgba(226, 166, 78, 0.04);
+}
+
+.dup-summary { color: var(--jade); }
 .track-list input[type="checkbox"] {
   accent-color: var(--amber);
   width: 16px;
