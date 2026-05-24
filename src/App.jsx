@@ -5,6 +5,8 @@ import Editor from "./components/Editor.jsx";
 import Notice from "./components/Notice.jsx";
 import AdminGate from "./components/AdminGate.jsx";
 import SearchOverlay from "./components/SearchOverlay.jsx";
+import PlaylistImport from "./components/PlaylistImport.jsx";
+import AdminTools from "./components/AdminTools.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
 import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js";
 import { getAdminToken, clearAdminToken } from "./lib/admin.js";
@@ -27,6 +29,8 @@ export default function App() {
   const [notice, setNotice] = useState({ open: false, message: "" });
   const [adminOpen, setAdminOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
+  const [playlistImportOpen, setPlaylistImportOpen] = useState(false);
+  const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [searchIndex, setSearchIndex] = useState(() => new Map());
   const [indexProgress, setIndexProgress] = useState({ done: 0, total: 0, finished: false });
 
@@ -194,6 +198,14 @@ export default function App() {
           setEditorOpen(true);
           setRailOpen(false);
         }}
+        onImportPlaylist={() => {
+          setPlaylistImportOpen(true);
+          setRailOpen(false);
+        }}
+        onAdminTools={() => {
+          setAdminToolsOpen(true);
+          setRailOpen(false);
+        }}
         searchIndex={searchIndex}
         indexProgress={indexProgress}
         isAdmin={isAdmin}
@@ -279,6 +291,35 @@ export default function App() {
         library={library}
         onSelect={(id) => setActiveId(id)}
         onClose={() => setSearchOverlayOpen(false)}
+      />
+
+      <PlaylistImport
+        open={playlistImportOpen}
+        library={library}
+        onClose={() => setPlaylistImportOpen(false)}
+        onImported={async () => {
+          // Pull fresh state so newly added songs appear in the list. We could
+          // splice them client-side, but the bulk path touches dedup keys + may
+          // resolve titles differently — a full refresh is simpler and only
+          // happens once per import.
+          try {
+            const fresh = await getLibrary();
+            setLibrary(fresh);
+          } catch {
+            // Non-fatal — user can refresh manually.
+          }
+        }}
+      />
+
+      <AdminTools
+        open={adminToolsOpen}
+        onClose={() => setAdminToolsOpen(false)}
+        onBackfillComplete={async () => {
+          try {
+            const fresh = await getLibrary();
+            setLibrary(fresh);
+          } catch {}
+        }}
       />
 
       <Notice

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import { fetchLyrics } from "../lib/lyricsApi";
+import { resolveAliasOrOriginal } from "../lib/aliasApi";
+
+const HAN_RE = /[㐀-鿿]/;
+const LATIN_RE = /[A-Za-z]/;
+// Skip the alias roundtrip when the artist already contains both scripts —
+// the user has typed the combined form themselves.
+const looksCombined = (s) => HAN_RE.test(s) && LATIN_RE.test(s);
 
 const LANGS = [
   { id: "auto", label: "Auto-detect" },
@@ -126,7 +133,18 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
     if (!canSave) return;
     setSaveState({ saving: true, error: "" });
     try {
-      const payload = { ...form, title: form.title.trim() };
+      const trimmedArtist = form.artist.trim();
+      // Silently resolve CJK ↔ Latin alias so saved songs land in the combined
+      // form (e.g. "薛之谦 Joker Xue"). If the user already typed both scripts,
+      // skip the lookup. Failures fall back to the typed string.
+      const resolvedArtist = looksCombined(trimmedArtist)
+        ? trimmedArtist
+        : await resolveAliasOrOriginal(trimmedArtist);
+      const payload = {
+        ...form,
+        title: form.title.trim(),
+        artist: resolvedArtist || trimmedArtist,
+      };
       if (isEdit) payload.id = initial.id;
       await onSave(payload);
       // Editor unmounts on success; no need to clear state.

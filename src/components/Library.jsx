@@ -34,6 +34,8 @@ export default function Library({
   onSearch,
   onSelect,
   onAdd,
+  onImportPlaylist,
+  onAdminTools,
   searchIndex,
   indexProgress,
   isAdmin,
@@ -86,6 +88,25 @@ export default function Library({
           +
         </button>
       </div>
+
+      {isAdmin && (
+        <div className="rail-admin-tools">
+          <button
+            className="btn ghost sm"
+            onClick={onImportPlaylist}
+            title="Bulk-import songs from a Spotify or YouTube playlist"
+          >
+            Import playlist
+          </button>
+          <button
+            className="btn ghost sm"
+            onClick={onAdminTools}
+            title="Manage artist aliases and backfill existing songs"
+          >
+            Aliases / backfill
+          </button>
+        </div>
+      )}
 
       <div className="rail-filter">
         {FILTERS.map((f) => (
