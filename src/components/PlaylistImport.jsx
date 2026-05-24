@@ -57,7 +57,8 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   const [url, setUrl] = useState("");
   const [phase, setPhase] = useState(PHASE.INPUT);
   const [fetchError, setFetchError] = useState("");
-  const [playlist, setPlaylist] = useState(null); // { source, playlistTitle, tracks }
+  const [playlist, setPlaylist] = useState(null); // { source, playlistTitle }
+  const [tracks, setTracks] = useState([]);       // local editable copy
   const [selected, setSelected] = useState(new Set()); // indexes into tracks
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [results, setResults] = useState(null); // { added, existed, failed }
@@ -68,6 +69,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       setPhase(PHASE.INPUT);
       setFetchError("");
       setPlaylist(null);
+      setTracks([]);
       setSelected(new Set());
       setProgress({ done: 0, total: 0, current: "" });
       setResults(null);
@@ -76,8 +78,17 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
 
   useEffect(() => {
     const onKey = (e) => {
+      if (e.key !== "Escape") return;
       // Don't let Escape kill an import mid-flight — easy to lose progress.
-      if (e.key === "Escape" && phase !== PHASE.IMPORTING) onClose();
+      if (phase === PHASE.IMPORTING) return;
+      // If the user is editing a field, the first Escape blurs the input
+      // instead of closing the whole modal (avoids losing typed edits).
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) {
+        ae.blur();
+        return;
+      }
+      onClose();
     };
     if (open) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -89,14 +100,16 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
     setFetchError("");
     try {
       const data = await fetchPlaylist(url.trim());
-      const tracks = data.tracks || [];
-      if (!tracks.length) {
+      const incoming = data.tracks || [];
+      if (!incoming.length) {
         setFetchError("Playlist has no tracks (or they're all private/region-locked).");
         return;
       }
-      setPlaylist(data);
+      setPlaylist({ source: data.source, playlistTitle: data.playlistTitle });
+      // Shallow-clone so swap edits don't mutate the response object.
+      setTracks(incoming.map((t) => ({ ...t })));
       // Pre-select all tracks; user can untick any they want to skip.
-      setSelected(new Set(tracks.map((_, i) => i)));
+      setSelected(new Set(incoming.map((_, i) => i)));
       setPhase(PHASE.PREVIEW);
     } catch (e) {
       setFetchError(e.message || "Couldn't fetch the playlist.");
@@ -113,26 +126,57 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   };
 
   const setAll = (on) => {
-    if (!playlist) return;
-    setSelected(on ? new Set(playlist.tracks.map((_, i) => i)) : new Set());
+    if (!tracks.length) return;
+    setSelected(on ? new Set(tracks.map((_, i) => i)) : new Set());
+  };
+
+  // Flip title ↔ artist on a single track. Used when the parser got the order
+  // wrong (e.g. CJK lyric-channel uploads that put title before artist).
+  const swapTrack = (i) => {
+    setTracks((prev) => {
+      const next = prev.slice();
+      const t = next[i];
+      if (!t) return prev;
+      next[i] = { ...t, title: t.artist || "", artist: t.title || "" };
+      return next;
+    });
+  };
+
+  const swapAllSelected = () => {
+    setTracks((prev) =>
+      prev.map((t, i) =>
+        selected.has(i) ? { ...t, title: t.artist || "", artist: t.title || "" } : t
+      )
+    );
+  };
+
+  // Inline edit: update one field of one track. The state holds the local
+  // copy; nothing is sent to the server until startImport.
+  const editTrack = (i, field, value) => {
+    setTracks((prev) => {
+      const next = prev.slice();
+      if (!next[i]) return prev;
+      next[i] = { ...next[i], [field]: value };
+      return next;
+    });
   };
 
   const startImport = async () => {
-    if (!playlist) return;
-    const tracks = playlist.tracks
+    if (!tracks.length) return;
+    const queue = tracks
       .map((t, i) => ({ ...t, _idx: i }))
       .filter((_, i) => selected.has(i));
-    if (!tracks.length) return;
+    if (!queue.length) return;
 
     setPhase(PHASE.IMPORTING);
-    setProgress({ done: 0, total: tracks.length, current: tracks[0]?.title || "" });
+    setProgress({ done: 0, total: queue.length, current: queue[0]?.title || "" });
 
     const added = [];
     const existed = [];
     const failed = [];
 
     await runWithConcurrency(
-      tracks,
+      queue,
       async (t) => {
         // Resolve alias up front so the dedup check uses the formatted artist —
         // catches the case where the library already has the song under the
@@ -199,7 +243,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       },
       CONCURRENCY,
       (done, total, _r, idx) => {
-        const next = tracks[idx + 1];
+        const next = queue[idx + 1];
         setProgress({ done, total, current: next ? next.title : "" });
       }
     );
@@ -272,10 +316,14 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
         {phase === PHASE.PREVIEW && playlist && (
           <PreviewList
             playlist={playlist}
+            tracks={tracks}
             selected={selected}
             onToggle={toggleTrack}
             onSelectAll={() => setAll(true)}
             onSelectNone={() => setAll(false)}
+            onSwap={swapTrack}
+            onSwapAll={swapAllSelected}
+            onEdit={editTrack}
             onBack={() => setPhase(PHASE.INPUT)}
             onStart={startImport}
             totalSelected={totalSelected}
@@ -300,15 +348,19 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
 
 function PreviewList({
   playlist,
+  tracks,
   selected,
   onToggle,
   onSelectAll,
   onSelectNone,
+  onSwap,
+  onSwapAll,
+  onEdit,
   onBack,
   onStart,
   totalSelected,
 }) {
-  const allOn = selected.size === playlist.tracks.length;
+  const allOn = selected.size === tracks.length;
   return (
     <>
       <div className="playlist-meta">
@@ -318,26 +370,67 @@ function PreviewList({
           {playlist.source === "spotify" ? "Spotify" : "YouTube"}
         </span>
         <span className="meta-sep">·</span>
-        <span>{playlist.tracks.length} tracks</span>
+        <span>{tracks.length} tracks</span>
       </div>
       <div className="playlist-tools">
         <button className="btn text sm" onClick={allOn ? onSelectNone : onSelectAll}>
           {allOn ? "Deselect all" : "Select all"}
         </button>
+        <button
+          className="btn text sm"
+          onClick={onSwapAll}
+          disabled={totalSelected === 0}
+          title="Swap title ↔ artist for every selected track (useful when the whole playlist uses Title - Artist order)"
+        >
+          ⇄ Swap selected
+        </button>
         <span className="muted">{totalSelected} selected</span>
       </div>
+      <div className="hint">
+        Tap a field to edit. Use ⇄ on a row to swap title and artist, or the
+        toolbar swap to flip every selected track at once.
+      </div>
       <ul className="track-list">
-        {playlist.tracks.map((t, i) => (
+        {tracks.map((t, i) => (
           <li key={i} className={selected.has(i) ? "" : "off"}>
-            <label>
+            <div className="track-row">
               <input
                 type="checkbox"
+                className="track-check"
                 checked={selected.has(i)}
                 onChange={() => onToggle(i)}
+                aria-label="Include this track in the import"
               />
-              <span className="t">{t.title}</span>
-              <span className="a">{t.artist || "—"}</span>
-            </label>
+              <div className="track-fields">
+                <input
+                  type="text"
+                  className="t-input"
+                  value={t.title}
+                  onChange={(e) => onEdit(i, "title", e.target.value)}
+                  placeholder="Title"
+                  aria-label="Song title"
+                  spellCheck={false}
+                />
+                <input
+                  type="text"
+                  className={"a-input" + (t.artist ? "" : " empty")}
+                  value={t.artist}
+                  onChange={(e) => onEdit(i, "artist", e.target.value)}
+                  placeholder="Artist (leave blank to search by title only)"
+                  aria-label="Artist"
+                  spellCheck={false}
+                />
+              </div>
+              <button
+                type="button"
+                className="swap-btn"
+                onClick={() => onSwap(i)}
+                title="Swap title ↔ artist"
+                aria-label="Swap title and artist"
+              >
+                ⇄
+              </button>
+            </div>
           </li>
         ))}
       </ul>

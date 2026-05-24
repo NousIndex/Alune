@@ -850,29 +850,72 @@ rt {
 }
 .track-list li:last-child { border-bottom: none; }
 .track-list li.off { opacity: 0.45; }
-.track-list label {
+.track-list .track-row {
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  grid-template-columns: 22px 1fr 28px;
   gap: 10px;
-  align-items: center;
-  padding: 8px 12px;
-  cursor: pointer;
+  align-items: flex-start;
+  padding: 8px 10px;
 }
-.track-list label .t { color: var(--paper); font-size: 0.9rem; }
-.track-list label .a {
-  color: var(--paper-faint);
-  font-size: 0.78rem;
-  text-align: right;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.track-list .track-check {
+  margin-top: 8px; /* visually align with the title input */
 }
+.track-list .track-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.track-list .t-input,
+.track-list .a-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  color: var(--paper);
+  line-height: 1.35;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.track-list .t-input { font-size: 0.92rem; font-weight: 500; }
+.track-list .a-input { font-size: 0.78rem; color: var(--paper-dim); }
+.track-list .a-input.empty { color: var(--rose); font-style: italic; }
+.track-list .t-input:hover,
+.track-list .a-input:hover {
+  border-color: var(--line);
+}
+.track-list .t-input:focus,
+.track-list .a-input:focus {
+  outline: none;
+  border-color: var(--amber-soft);
+  background: var(--ink-2);
+  color: var(--paper);
+  font-style: normal;
+}
+.track-list .a-input::placeholder { color: var(--paper-faint); font-style: italic; }
 .track-list input[type="checkbox"] {
   accent-color: var(--amber);
   width: 16px;
   height: 16px;
 }
+.swap-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--paper-dim);
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+.swap-btn:hover { color: var(--amber-soft); border-color: var(--amber-soft); }
+.playlist-tools { gap: 12px; flex-wrap: wrap; }
+.playlist-tools .btn.text.sm { padding: 4px 8px; }
 
 .import-progress {
   display: flex;
