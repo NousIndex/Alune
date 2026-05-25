@@ -40,7 +40,8 @@ export function buildLibIndex(library) {
 //   match: 'strict' — title + artist both match
 //          'alias'  — title matches AND one artist contains the other
 //                     ("Joker Xue" vs the saved "薛之谦 Joker Xue")
-//          'title'  — title matches and is unique in the library; artist differs
+//          'title'  — title matches and is unique in the library, and the
+//                     caller gave NO artist to disambiguate with
 export function findExistingFolded(libIndex, title, artist) {
   const tf = foldForDedup(title);
   if (!tf) return null;
@@ -60,8 +61,15 @@ export function findExistingFolded(libIndex, title, artist) {
       });
       if (nested) return { song: nested.song, match: "alias" };
     }
+
+    // An artist was provided but matched none of the same-title songs above —
+    // they're genuinely different works (爱你 by 陳芳語 vs 爱你 by 王心凌), not a
+    // duplicate. Don't fall through to the title-only guess.
+    return null;
   }
 
+  // No artist to disambiguate with: if exactly one saved song carries this
+  // title, it's almost certainly the one the user means.
   if (sameTitle.length === 1) return { song: sameTitle[0].song, match: "title" };
   return null;
 }

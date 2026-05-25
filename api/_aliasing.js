@@ -11,6 +11,30 @@ const LATIN_RE = /[A-Za-z]/;
 const MB_BASE = "https://musicbrainz.org/ws/2";
 const MB_UA = "Alune/1.0 ( https://github.com/anthropics/claude-code )";
 
+// MusicBrainz carries some artist aliases that are a CJK name encoded in Big5 /
+// GB and then read back as Latin-1 — e.g. 周華健 surfaces as "©PµØ°·" (Big5) and
+// "ÖÜ»ª½¡" (GB). The byte soup shows up as C1 control characters (never present
+// in real text) or a cluster of Latin-1 symbol-block code points. Accented
+// letters used in genuine names (é, ñ, ü, ø, ß…) live outside these ranges, so
+// this stays clear of false positives.
+const C1_CONTROL_RE = /[\u0080-\u009F]/;
+const LATIN1_SYMBOL_RE = /[\u00A1-\u00BF\u00D7\u00F7]/g;
+
+export function looksLikeMojibake(s) {
+  if (!s) return false;
+  if (C1_CONTROL_RE.test(s)) return true;
+  return (s.match(LATIN1_SYMBOL_RE) || []).length >= 2;
+}
+
+// Drop whitespace-delimited tokens that are mojibake, keeping the rest. Used to
+// repair artist fields a previous backfill already wrote in combined form, e.g.
+// "周華健 ©PµØ°·" → "周華健". Returns "" only if every token was mojibake.
+export function stripMojibake(s) {
+  const str = (s || "").trim();
+  if (!str) return "";
+  return str.split(/\s+/).filter((tok) => !looksLikeMojibake(tok)).join(" ").trim();
+}
+
 export function normalizeName(s) {
   return (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
 }
@@ -27,7 +51,7 @@ export function hasLatin(s) {
 // was provided originally. If both sides are the same script, we don't merge
 // — only mixed-script pairs get joined.
 export function formatPair(original, alias) {
-  if (!alias) return original || "";
+  if (!alias || looksLikeMojibake(alias)) return original || "";
   if (hasHan(original) && !hasHan(alias)) return `${original} ${alias}`;
   if (!hasHan(original) && hasHan(alias)) return `${alias} ${original}`;
   return original;
@@ -44,7 +68,7 @@ function pickAlternateScript(original, names) {
   const norm = normalizeName(original);
   const wantHan = !hasHan(original);
   for (const n of names) {
-    if (!n) continue;
+    if (!n || looksLikeMojibake(n)) continue;
     if (normalizeName(n) === norm) continue;
     if (wantHan && hasHan(n)) return n;
     if (!wantHan && hasLatin(n) && !hasHan(n)) return n;
@@ -69,7 +93,11 @@ function escapeLucene(s) {
 // alias is null when no counterpart was found. The result is always cached so
 // repeated lookups (e.g. backfill scans) only hit MusicBrainz once per artist.
 export async function resolveAlias(name, redis) {
-  const original = (name || "").trim();
+  const raw = (name || "").trim();
+  // Repair inputs a previous backfill already wrote in corrupted combined form
+  // (e.g. "周華健 ©PµØ°·"): drop the mojibake token so the clean CJK part drives
+  // the lookup. Falls back to the raw value if nothing's left to resolve on.
+  const original = stripMojibake(raw) || raw;
   const result = { original, alias: null, formatted: original, source: "none" };
   if (!original) return result;
   const norm = normalizeName(original);
@@ -78,7 +106,7 @@ export async function resolveAlias(name, redis) {
     const override = await redis.hget("alias:overrides", norm);
     if (override) {
       const aliasName = typeof override === "string" ? override : (override?.alias || null);
-      if (aliasName) {
+      if (aliasName && !looksLikeMojibake(aliasName)) {
         return {
           original,
           alias: aliasName,
@@ -88,7 +116,9 @@ export async function resolveAlias(name, redis) {
       }
     }
     const cached = await redis.get(`alias:cache:${norm}`);
-    if (cached !== null && cached !== undefined) {
+    // Ignore poisoned cache entries and fall through to re-resolve, overwriting
+    // them below — older caches may hold a mojibake alias from MusicBrainz.
+    if (cached !== null && cached !== undefined && !looksLikeMojibake(cached)) {
       const aliasName = cached === "" ? null : cached;
       return {
         original,
