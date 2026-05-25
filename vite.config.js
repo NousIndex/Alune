@@ -74,10 +74,44 @@ function devRedis() {
   };
 }
 
+// Retry knobs mirror api/lyrics.js — see the rationale there.
+const LYRICS_ATTEMPTS = 3;
+const LYRICS_RETRY_DELAY_MS = 400;
+const lyricsSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchOnce(reqPath) {
+  try {
+    const r = await fetch(`${UPSTREAM}${reqPath}`);
+    const json = await r.json().catch(() => null);
+    return { ok: r.ok && Boolean(json?.data?.lyrics), status: r.status, json };
+  } catch {
+    return { ok: false, status: 0, json: null };
+  }
+}
+
+const isTransient = (r) => r.status === 0 || r.status >= 500;
+
 async function tryFetch(reqPath) {
-  const r = await fetch(`${UPSTREAM}${reqPath}`);
-  const json = await r.json().catch(() => null);
-  return { ok: r.ok && Boolean(json?.data?.lyrics), status: r.status, json };
+  let result;
+  for (let i = 0; i < LYRICS_ATTEMPTS; i++) {
+    result = await fetchOnce(reqPath);
+    if (!isTransient(result)) return result;
+    if (i < LYRICS_ATTEMPTS - 1) await lyricsSleep(LYRICS_RETRY_DELAY_MS * (i + 1));
+  }
+  return result;
+}
+
+// Mirror of api/lyrics.js failureMessage so dev surfaces the same hints.
+function lyricsFailureMessage(result) {
+  if (result.json?.data?.message) return result.json.data.message;
+  if (result.status === 429)
+    return "Lyrics service is rate-limiting requests — wait a moment and retry, or paste lyrics manually.";
+  if (result.status === 0)
+    return "Couldn't reach the lyrics service. Check your connection, or paste lyrics manually.";
+  if (result.status >= 500)
+    return `Lyrics service error (HTTP ${result.status}). Try again shortly, or paste lyrics manually.`;
+  if (result.status === 404) return "No lyrics found for this title / artist.";
+  return `Lyrics request failed (HTTP ${result.status || "unknown"}).`;
 }
 
 function devLyricsProxy() {
@@ -104,7 +138,13 @@ function devLyricsProxy() {
           }
           res.statusCode = result.ok ? 200 : result.status || 502;
           res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify(result.json ?? { error: "upstream returned no body" }));
+          res.end(
+            JSON.stringify(
+              result.ok || result.json
+                ? result.json
+                : { error: lyricsFailureMessage(result) }
+            )
+          );
         } catch (e) {
           res.statusCode = 500;
           res.setHeader("content-type", "application/json");
