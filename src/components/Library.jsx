@@ -35,6 +35,7 @@ export default function Library({
   onSelect,
   onAdd,
   onImportPlaylist,
+  onBulkAdd,
   onAdminTools,
   searchIndex,
   indexProgress,
@@ -97,6 +98,13 @@ export default function Library({
             title="Bulk-import songs from a Spotify or YouTube playlist"
           >
             Import playlist
+          </button>
+          <button
+            className="btn ghost sm"
+            onClick={onBulkAdd}
+            title="Paste a list of songs to add them all at once"
+          >
+            Bulk add
           </button>
           <button
             className="btn ghost sm"

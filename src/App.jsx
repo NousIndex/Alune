@@ -30,6 +30,7 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
   const [playlistImportOpen, setPlaylistImportOpen] = useState(false);
+  const [playlistImportMode, setPlaylistImportMode] = useState("url");
   const [adminToolsOpen, setAdminToolsOpen] = useState(false);
   const [searchIndex, setSearchIndex] = useState(() => new Map());
   const [indexProgress, setIndexProgress] = useState({ done: 0, total: 0, finished: false });
@@ -199,6 +200,12 @@ export default function App() {
           setRailOpen(false);
         }}
         onImportPlaylist={() => {
+          setPlaylistImportMode("url");
+          setPlaylistImportOpen(true);
+          setRailOpen(false);
+        }}
+        onBulkAdd={() => {
+          setPlaylistImportMode("paste");
           setPlaylistImportOpen(true);
           setRailOpen(false);
         }}
@@ -296,6 +303,7 @@ export default function App() {
       <PlaylistImport
         open={playlistImportOpen}
         library={library}
+        initialMode={playlistImportMode}
         onClose={() => setPlaylistImportOpen(false)}
         onImported={async () => {
           // Pull fresh state so newly added songs appear in the list. We could

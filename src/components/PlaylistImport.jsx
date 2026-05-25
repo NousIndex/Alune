@@ -24,6 +24,32 @@ const MIN_LYRIC_CHARS = 20;
 // them anyway. Keeping it at 1 also makes "current track" in the UI accurate.
 const CONCURRENCY = 1;
 
+// Parse a pasted block of songs, one per line, into the same track shape the
+// playlist parser produces. Splits each line into title + artist on the first
+// tab, " - ", en/em dash, or " | ". Lines with no separator become title-only
+// (the import's round-2 title search handles those). We don't guess title vs
+// artist order — the preview lets the user swap rows individually or all at once.
+function parseSongList(text) {
+  const out = [];
+  for (const raw of (text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const tab = line.indexOf("\t");
+    if (tab !== -1) {
+      out.push({
+        title: line.slice(0, tab).trim(),
+        artist: line.slice(tab + 1).trim(),
+        externalUrl: "",
+      });
+      continue;
+    }
+    const m = line.match(/^(.*?)\s+[-–—|]\s+(.*)$/);
+    if (m) out.push({ title: m[1].trim(), artist: m[2].trim(), externalUrl: "" });
+    else out.push({ title: line, artist: "", externalUrl: "" });
+  }
+  return out;
+}
+
 async function runWithConcurrency(items, worker, concurrency, onProgress) {
   const results = new Array(items.length);
   let cursor = 0;
@@ -44,8 +70,10 @@ async function runWithConcurrency(items, worker, concurrency, onProgress) {
   return results;
 }
 
-export default function PlaylistImport({ open, library, onClose, onImported }) {
+export default function PlaylistImport({ open, library, initialMode = "url", onClose, onImported }) {
+  const [inputMode, setInputMode] = useState(initialMode); // "url" | "paste"
   const [url, setUrl] = useState("");
+  const [pasteText, setPasteText] = useState("");
   const [phase, setPhase] = useState(PHASE.INPUT);
   const [fetchError, setFetchError] = useState("");
   const [playlist, setPlaylist] = useState(null); // { source, playlistTitle }
@@ -59,7 +87,9 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
 
   useEffect(() => {
     if (open) {
+      setInputMode(initialMode);
       setUrl("");
+      setPasteText("");
       setPhase(PHASE.INPUT);
       setFetchError("");
       setPlaylist(null);
@@ -69,7 +99,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       setResults(null);
       setReview(null);
     }
-  }, [open]);
+  }, [open, initialMode]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -91,6 +121,7 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   }, [open, phase, onClose]);
 
   const canFetch = url.trim().length > 0 && phase === PHASE.INPUT;
+  const canUseList = pasteText.trim().length > 0 && phase === PHASE.INPUT;
 
   // Precompute folded dedup keys for the whole library once. Han titles fold
   // to toneless pinyin so Traditional/Simplified variants match
@@ -121,6 +152,28 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
     } catch (e) {
       setFetchError(e.message || "Couldn't fetch the playlist.");
     }
+  };
+
+  // Paste-a-list path: parse the textarea into tracks and jump straight to the
+  // same preview the playlist flow uses. No network call here — lyrics are only
+  // fetched once the user starts the import from the preview.
+  const onUsePastedList = () => {
+    setFetchError("");
+    const parsed = parseSongList(pasteText);
+    if (!parsed.length) {
+      setFetchError("Add at least one song — one per line.");
+      return;
+    }
+    setPlaylist({ source: "paste", playlistTitle: "Pasted list" });
+    setTracks(parsed);
+    // Mirror the playlist flow: auto-deselect rows that already look like a
+    // library match, leaving the badge visible so the user can re-check them.
+    const initial = new Set();
+    parsed.forEach((t, i) => {
+      if (!findExistingFolded(libIndex, t.title, t.artist)) initial.add(i);
+    });
+    setSelected(initial);
+    setPhase(PHASE.PREVIEW);
   };
 
   const toggleTrack = (i) => {
@@ -412,6 +465,10 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
   if (!open) return null;
 
   const totalSelected = selected.size;
+  const isPaste =
+    playlist?.source === "paste" ||
+    (phase === PHASE.INPUT && inputMode === "paste");
+  const heading = isPaste ? "Add songs in bulk" : "Import a playlist";
 
   return (
     <div
@@ -425,34 +482,80 @@ export default function PlaylistImport({ open, library, onClose, onImported }) {
       }}
     >
       <div className="modal modal-wide">
-        <h2>Import a playlist</h2>
+        <h2>{heading}</h2>
 
         {phase === PHASE.INPUT && (
           <>
-            <div className="field">
-              <label>Spotify or YouTube playlist URL</label>
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/…  or  https://www.youtube.com/playlist?list=…"
-                autoFocus
-              />
-              <div className="hint">
-                Public playlists only. The app fetches each track's lyrics, looks up
-                artist aliases (e.g. 薛之谦 / Joker Xue), and saves new songs to the
-                shared library. Existing songs are skipped.
-              </div>
+            <div className="seg seg-compact input-mode-toggle">
+              <button
+                className={inputMode === "url" ? "sel" : ""}
+                onClick={() => { setInputMode("url"); setFetchError(""); }}
+              >
+                Playlist URL
+              </button>
+              <button
+                className={inputMode === "paste" ? "sel" : ""}
+                onClick={() => { setInputMode("paste"); setFetchError(""); }}
+              >
+                Paste a list
+              </button>
             </div>
+
+            {inputMode === "url" ? (
+              <div className="field">
+                <label>Spotify or YouTube playlist URL</label>
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://open.spotify.com/playlist/…  or  https://www.youtube.com/playlist?list=…"
+                  autoFocus
+                />
+                <div className="hint">
+                  Public playlists only. The app fetches each track's lyrics, looks up
+                  artist aliases (e.g. 薛之谦 / Joker Xue), and saves new songs to the
+                  shared library. Existing songs are skipped.
+                </div>
+              </div>
+            ) : (
+              <div className="field">
+                <label>One song per line</label>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={"晴天 - 周杰伦\n专属天使 - Tank\nLemon - 米津玄師"}
+                  rows={10}
+                  autoFocus
+                  spellCheck={false}
+                />
+                <div className="hint">
+                  One song per line as <code>Title - Artist</code> (or separate with a
+                  tab or <code>|</code>). Lines with no separator are searched by title
+                  only. You'll get a preview to fix, swap, or deselect rows before any
+                  lyrics are fetched — not every song will match, but it's far faster
+                  than adding them one by one. Existing songs are skipped.
+                </div>
+              </div>
+            )}
             {fetchError && <div className="hint error">{fetchError}</div>}
             <div className="modal-actions">
               <button className="btn text" onClick={onClose}>Cancel</button>
-              <button
-                className="btn primary"
-                onClick={onFetchTracklist}
-                disabled={!canFetch}
-              >
-                Fetch tracklist
-              </button>
+              {inputMode === "url" ? (
+                <button
+                  className="btn primary"
+                  onClick={onFetchTracklist}
+                  disabled={!canFetch}
+                >
+                  Fetch tracklist
+                </button>
+              ) : (
+                <button
+                  className="btn primary"
+                  onClick={onUsePastedList}
+                  disabled={!canUseList}
+                >
+                  Preview list
+                </button>
+              )}
             </div>
           </>
         )}
@@ -536,7 +639,11 @@ function PreviewList({
         <strong>{playlist.playlistTitle || "Untitled playlist"}</strong>
         <span className="meta-sep">·</span>
         <span>
-          {playlist.source === "spotify" ? "Spotify" : "YouTube"}
+          {playlist.source === "spotify"
+            ? "Spotify"
+            : playlist.source === "paste"
+              ? "Pasted list"
+              : "YouTube"}
         </span>
         <span className="meta-sep">·</span>
         <span>{tracks.length} tracks</span>
