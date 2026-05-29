@@ -1,3 +1,5 @@
+import { otherChineseVariant, variantFallbackEnabled } from "./_chinese.js";
+
 const UPSTREAM = "https://lyrics.lewdhutao.my.eu.org";
 // The upstream is flaky: it intermittently 500s on a query that succeeds when
 // retried a moment later. Retry transient failures a couple times so the user
@@ -47,6 +49,27 @@ function failureMessage(result) {
   return `Lyrics request failed (HTTP ${result.status || "unknown"}).`;
 }
 
+// Run the source chain for one title/artist. Musixmatch sometimes returns a
+// different language version (e.g. Cantonese when Mandarin was wanted); YouTube
+// tends to surface the more popular cut. "auto" keeps the Musixmatch→YouTube
+// fallback; the explicit sources bypass it so the user can force one.
+async function search(title, artist, source) {
+  const q = new URLSearchParams({ title });
+  if (artist) q.set("artist", artist);
+  if (source === "youtube") return tryFetch(`/v2/youtube/lyrics?${q}`);
+  if (source === "musixmatch") return tryFetch(`/v2/musixmatch/lyrics?${q}`);
+  let result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
+  if (!result.ok && result.status !== 429) {
+    result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+  }
+  return result;
+}
+
+// Worth retrying under the other Han variant only when the upstream actually
+// answered "not found" — i.e. a parseable miss, not a 5xx/network blip (those
+// are transient, already retried in tryFetch) and not a 429 (back off instead).
+const isParseableMiss = (r) => !r.ok && r.status !== 429 && r.json != null;
+
 export default async function handler(req, res) {
   const title = (req.query.title || "").trim();
   const artist = (req.query.artist || "").trim();
@@ -56,22 +79,17 @@ export default async function handler(req, res) {
     return;
   }
 
-  const q = new URLSearchParams({ title });
-  if (artist) q.set("artist", artist);
+  let result = await search(title, artist, source);
 
-  // Musixmatch sometimes returns a different language version (e.g. Cantonese
-  // when Mandarin was wanted); YouTube tends to surface the more popular cut.
-  // "auto" keeps the Musixmatch→YouTube fallback chain; the explicit sources
-  // bypass it so the user can force one when auto picks the wrong version.
-  let result;
-  if (source === "youtube") {
-    result = await tryFetch(`/v2/youtube/lyrics?${q}`);
-  } else if (source === "musixmatch") {
-    result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
-  } else {
-    result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
-    if (!result.ok && result.status !== 429) {
-      result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+  // Chinese variant fallback: the song may be indexed under Traditional when the
+  // user typed Simplified (or vice versa). Retry once with the title + artist
+  // converted to the opposite script. Toggle via LYRICS_TS_FALLBACK env var.
+  if (isParseableMiss(result) && variantFallbackEnabled(process.env)) {
+    const altTitle = otherChineseVariant(title);
+    if (altTitle) {
+      const altArtist = otherChineseVariant(artist) || artist;
+      const alt = await search(altTitle, altArtist, source);
+      if (alt.ok) result = alt;
     }
   }
 

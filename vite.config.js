@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveAlias, normalizeName, formatPair } from "./api/_aliasing.js";
 import { fetchPlaylist } from "./api/_playlist.js";
+import { otherChineseVariant, variantFallbackEnabled } from "./api/_chinese.js";
 
 const UPSTREAM = "https://lyrics.lewdhutao.my.eu.org";
 
@@ -114,7 +115,21 @@ function lyricsFailureMessage(result) {
   return `Lyrics request failed (HTTP ${result.status || "unknown"}).`;
 }
 
-function devLyricsProxy() {
+// Mirror of api/lyrics.js: auto chain + Chinese variant fallback. The dev proxy
+// ignores the `source` param (always auto), matching its prior behavior.
+async function devSearch(title, artist) {
+  const q = new URLSearchParams({ title });
+  if (artist) q.set("artist", artist);
+  let result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
+  if (!result.ok && result.status !== 429) {
+    result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+  }
+  return result;
+}
+
+const isParseableMiss = (r) => !r.ok && r.status !== 429 && r.json != null;
+
+function devLyricsProxy(tsFallback) {
   return {
     name: "dev-lyrics-proxy",
     configureServer(server) {
@@ -129,13 +144,16 @@ function devLyricsProxy() {
             res.end(JSON.stringify({ error: "title is required" }));
             return;
           }
-          const q = new URLSearchParams({ title });
-          if (artist) q.set("artist", artist);
 
-          let result = await tryFetch(`/v2/musixmatch/lyrics?${q}`);
-          if (!result.ok && result.status !== 429) {
-            result = await tryFetch(`/v2/youtube/lyrics?${q}`);
+          let result = await devSearch(title, artist);
+          if (tsFallback && isParseableMiss(result)) {
+            const altTitle = otherChineseVariant(title);
+            if (altTitle) {
+              const alt = await devSearch(altTitle, otherChineseVariant(artist) || artist);
+              if (alt.ok) result = alt;
+            }
           }
+
           res.statusCode = result.ok ? 200 : result.status || 502;
           res.setHeader("content-type", "application/json");
           res.end(
@@ -567,6 +585,7 @@ export default defineConfig(({ mode }) => {
   // Dev-only fallback so the admin flow can be tested locally without setting
   // up a real token. In production Vercel injects ADMIN_TOKEN from its env vars.
   const adminToken = env.ADMIN_TOKEN || "dev";
+  const tsFallback = variantFallbackEnabled(env);
   // The dev playlist proxy calls fetchPlaylist() which reads Spotify/YouTube
   // creds from process.env. Vite's loadEnv() doesn't propagate to process.env
   // by default, so copy the keys we need.
@@ -581,7 +600,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       rawGzDictFiles(),
-      devLyricsProxy(),
+      devLyricsProxy(tsFallback),
       devLibraryProxy(adminToken),
       devAdminProxy(adminToken),
       devAliasProxy(),
