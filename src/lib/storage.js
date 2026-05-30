@@ -16,5 +16,6 @@ function save(key, value) {
   }
 }
 
-export const loadSettings = () => load(SET_KEY, { showRomaji: true, size: 1.55 });
+export const loadSettings = () =>
+  load(SET_KEY, { showRomaji: true, size: 1.55, zhVariant: "original" });
 export const saveSettings = (s) => save(SET_KEY, s);

@@ -12,28 +12,43 @@ function creditFor(song) {
   const dom = dominantLang(song.lyrics);
   return dom === "mixed" ? "Mixed" : CREDIT[dom] || "Lyrics";
 }
+function isChineseSong(song) {
+  if (song.lang && song.lang !== "auto") return song.lang === "zh";
+  return dominantLang(song.lyrics) === "zh";
+}
+
+// Cycle button face: shows the variant currently applied.
+const ZH_LABEL = {
+  original: { text: "原 Original", title: "Showing original characters — click for Simplified" },
+  simplified: { text: "简 Simplified", title: "Showing Simplified — click for Traditional" },
+  traditional: { text: "繁 Traditional", title: "Showing Traditional — click for original" },
+};
 
 export default function Reader({
   song,
   settings,
   onToggleRomaji,
+  onCycleZhVariant,
   onResize,
   isAdmin,
   onEdit,
   onDelete,
 }) {
+  const zhVariant = settings.zhVariant || "original";
+  const showVariant = isChineseSong(song);
   const [status, setStatus] = useState("loading");
   const [lines, setLines] = useState([]);
   const [note, setNote] = useState("");
   const [active, setActive] = useState(-1);
 
-  // Re-romanize only when the song or its content changes — NOT on settings
-  // changes (romaji visibility and size are handled with CSS, no recompute).
+  // Re-romanize when the song/content changes — and when the Chinese variant
+  // changes, since that rewrites the actual characters (romaji visibility and
+  // size are CSS-only and intentionally excluded).
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
     setActive(-1);
-    renderSong(song).then((res) => {
+    renderSong(song, { zhVariant }).then((res) => {
       if (cancelled) return;
       setLines(res.lines);
       setNote(res.note);
@@ -42,9 +57,11 @@ export default function Reader({
     return () => {
       cancelled = true;
     };
-  }, [song.id, song.lyrics, song.lang]);
+  }, [song.id, song.lyrics, song.lang, zhVariant]);
 
-  if (status === "loading") {
+  // Only take over the screen on the very first render (no lines yet). A variant
+  // switch re-renders too, but we keep the current lyrics up until it resolves.
+  if (status === "loading" && lines.length === 0) {
     return (
       <div className="center-state">
         <div className="pulse" />
@@ -67,6 +84,15 @@ export default function Reader({
           >
             {settings.showRomaji ? "◉ Reading" : "◌ Reading"}
           </button>
+          {showVariant && (
+            <button
+              className={"ctrl" + (zhVariant !== "original" ? " on" : "")}
+              title={ZH_LABEL[zhVariant].title}
+              onClick={onCycleZhVariant}
+            >
+              {ZH_LABEL[zhVariant].text}
+            </button>
+          )}
           <button className="ctrl icon" title="Smaller" onClick={() => onResize(-0.12)}>
             A−
           </button>

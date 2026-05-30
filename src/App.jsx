@@ -155,6 +155,10 @@ export default function App() {
 
   const toggleRomaji = () =>
     setSettings((s) => ({ ...s, showRomaji: !s.showRomaji }));
+  // Cycle original → simplified → traditional → original.
+  const ZH_CYCLE = { original: "simplified", simplified: "traditional", traditional: "original" };
+  const cycleZhVariant = () =>
+    setSettings((s) => ({ ...s, zhVariant: ZH_CYCLE[s.zhVariant] || "simplified" }));
   const resize = (delta) =>
     setSettings((s) => ({
       ...s,
@@ -227,6 +231,7 @@ export default function App() {
             song={activeSong}
             settings={settings}
             onToggleRomaji={toggleRomaji}
+            onCycleZhVariant={cycleZhVariant}
             onResize={resize}
             isAdmin={isAdmin}
             onEdit={handleEditActive}

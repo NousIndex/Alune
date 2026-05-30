@@ -133,8 +133,28 @@ function renderKoreanLine(line) {
   return out;
 }
 
-/* ---------------- Chinese: per-character ruby ---------------- */
-function renderChineseLine(line) {
+/* ---------------- Chinese: variant conversion + per-character ruby ---------------- *
+ * opencc-js carries sizable dictionaries, so it's dynamically imported — a
+ * reader left on "original" never downloads it. The first switch to
+ * Simplified/Traditional fetches the chunk once; converters are then cached.
+ * The same library powers the search variant fallback in api/_chinese.js.
+ */
+let _openccPromise = null;
+let _t2s = null;
+let _s2t = null;
+// Resolves to a sync (text) => text converter, or null for "original".
+async function getConverter(variant) {
+  if (variant !== "simplified" && variant !== "traditional") return null;
+  const mod = await (_openccPromise ||= import("opencc-js"));
+  const Converter = mod.Converter || mod.default?.Converter;
+  if (variant === "simplified")
+    return (_t2s ||= Converter({ from: "tw", to: "cn" }));
+  return (_s2t ||= Converter({ from: "cn", to: "tw" }));
+}
+
+// Convert the line first so the pinyin readings match the characters shown.
+function renderChineseLine(line, convert) {
+  if (convert) line = convert(line);
   if (!pinyinAvailable()) return esc(line);
   const arr = pinyin(line, { type: "all", toneType: "symbol", v: true });
   return arr
@@ -249,12 +269,12 @@ function lineLang(line, songLang) {
   return "en";
 }
 
-async function renderLine(line, songLang) {
+async function renderLine(line, songLang, zhConvert) {
   if (line.trim() === "") return { blank: true };
   const lang = lineLang(line, songLang);
   let html;
   try {
-    if (lang === "zh") html = renderChineseLine(line);
+    if (lang === "zh") html = renderChineseLine(line, zhConvert);
     else if (lang === "ja") html = await renderJapaneseLine(line);
     else if (lang === "ko") html = renderKoreanLine(line);
     else html = esc(line);
@@ -278,10 +298,11 @@ const NOTE_PENDING =
 const NOTE_PINYIN = "Pinyin engine couldn’t load — original characters shown.";
 
 /* ---------------- public API: render an entire song ---------------- */
-export async function renderSong(song) {
+export async function renderSong(song, { zhVariant = "original" } = {}) {
   const rawLines = song.lyrics.split("\n");
+  const zhConvert = await getConverter(zhVariant);
   const lines = [];
-  for (const ln of rawLines) lines.push(await renderLine(ln, song.lang));
+  for (const ln of rawLines) lines.push(await renderLine(ln, song.lang, zhConvert));
 
   const needsJP =
     song.lang === "ja" ||
