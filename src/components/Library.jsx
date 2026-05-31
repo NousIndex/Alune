@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { HAN, KANA, HANGUL, dominantLang } from "../lib/romanize.js";
+import { hasTimestamps } from "../lib/lrc.js";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -173,7 +174,12 @@ export default function Library({
                 <div className="t">{s.title}</div>
                 <div className="a">
                   <span className={"badge " + lang}>{label}</span>
-                  {s.artist || "—"}
+                  <span className="a-name">{s.artist || "—"}</span>
+                  {hasTimestamps(s.syncedLyrics) && (
+                    <span className="follow-dot" title="Karaoke timing available — Follow ready">
+                      ♪
+                    </span>
+                  )}
                 </div>
               </div>
             );

@@ -211,6 +211,20 @@ body::after {
   align-items: center;
   gap: 7px;
 }
+.song-item .a-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Tiny marker: this song has karaoke timing (Follow available). */
+.song-item .follow-dot {
+  flex-shrink: 0;
+  color: var(--amber-soft);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
 .badge {
   font-size: 0.6rem;
   font-weight: 700;
