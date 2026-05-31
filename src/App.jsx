@@ -10,7 +10,7 @@ import PlaylistImport from "./components/PlaylistImport.jsx";
 import AdminTools from "./components/AdminTools.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
 import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js";
-import { fetchSynced } from "./lib/syncedApi.js";
+import TimingFinder from "./components/TimingFinder.jsx";
 import { getAdminToken, clearAdminToken } from "./lib/admin.js";
 import {
   lightSearchText,
@@ -29,6 +29,7 @@ export default function App() {
   const [railOpen, setRailOpen] = useState(false);
   const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
   const [identifyOpen, setIdentifyOpen] = useState(false);
+  const [timingFinderOpen, setTimingFinderOpen] = useState(false);
   const [notice, setNotice] = useState({ open: false, message: "" });
   const [adminOpen, setAdminOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
@@ -139,31 +140,14 @@ export default function App() {
     setEditorOpen(true);
   };
 
-  // Admin: fetch (or refresh) timed lyrics for just the open song. Additive —
-  // only the timing fields change, never the saved lyrics. Returns whether it
-  // found anything so the Reader can show inline feedback.
-  const handleFindTiming = async () => {
-    if (!activeSong) return false;
-    const r = await fetchSynced({ title: activeSong.title, artist: activeSong.artist });
-    if (!r?.syncedLyrics) {
-      setNotice({
-        open: true,
-        message: `No timed lyrics found on LRCLIB for “${activeSong.title}”.`,
-      });
-      return false;
-    }
-    const updated = await updateSong({
-      id: activeSong.id,
-      syncedLyrics: r.syncedLyrics,
-      duration: r.duration,
-      syncedSource: r.source,
-    });
+  // Admin: timing was saved for the open song via the TimingFinder dialog —
+  // patch it into the library so the Follow button appears immediately.
+  const handleTimingSaved = (updated) => {
     setLibrary((lib) => lib.map((s) => (s.id === updated.id ? updated : s)));
     setNotice({
       open: true,
-      message: `Timed lyrics added to “${updated.title}” (${r.source}) — Follow mode is ready.`,
+      message: `Timed lyrics saved to “${updated.title}” — Follow mode is ready.`,
     });
-    return true;
   };
 
   const handleDeleteActive = async () => {
@@ -283,7 +267,7 @@ export default function App() {
             isAdmin={isAdmin}
             onEdit={handleEditActive}
             onDelete={handleDeleteActive}
-            onFindTiming={handleFindTiming}
+            onFindTiming={() => setTimingFinderOpen(true)}
           />
         ) : (
           <div className="center-state">
@@ -391,6 +375,13 @@ export default function App() {
             // Non-fatal — user can refresh manually.
           }
         }}
+      />
+
+      <TimingFinder
+        open={timingFinderOpen}
+        song={activeSong}
+        onClose={() => setTimingFinderOpen(false)}
+        onSaved={handleTimingSaved}
       />
 
       <AdminTools

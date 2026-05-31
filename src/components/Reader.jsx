@@ -43,7 +43,6 @@ export default function Reader({
   onDelete,
   onFindTiming,
 }) {
-  const [findingTiming, setFindingTiming] = useState(false);
   const zhVariant = settings.zhVariant || "original";
   const showVariant = isChineseSong(song);
   const showHideOriginal = hasReadings(song);
@@ -143,26 +142,10 @@ export default function Reader({
             <>
               <button
                 className="ctrl"
-                title={
-                  hasTimestamps(song.syncedLyrics)
-                    ? "Re-fetch karaoke timing from LRCLIB"
-                    : "Find karaoke timing for this song from LRCLIB"
-                }
-                disabled={findingTiming}
-                onClick={async () => {
-                  setFindingTiming(true);
-                  try {
-                    await onFindTiming?.();
-                  } finally {
-                    setFindingTiming(false);
-                  }
-                }}
+                title="Search LRCLIB for karaoke timing (editable title / artist)"
+                onClick={onFindTiming}
               >
-                {findingTiming
-                  ? "♪ …"
-                  : hasTimestamps(song.syncedLyrics)
-                    ? "♪ Re-time"
-                    : "♪ Find timing"}
+                {hasTimestamps(song.syncedLyrics) ? "♪ Re-time" : "♪ Find timing"}
               </button>
               <button className="ctrl" title="Edit this song" onClick={onEdit}>
                 Edit
