@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { renderSong } from "../lib/romanize.js";
-import { parseLrc } from "../lib/lrc.js";
+import { parseLrc, stripCreditEntries } from "../lib/lrc.js";
 
 // Karaoke Follow mode. Only mounted for songs that have stored synced lyrics
 // (the Follow button is gated on that), so timing always exists here. We render
@@ -66,7 +66,11 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
     songMsRef.current = 0;
     baseSongRef.current = 0;
 
-    const entries = parseLrc(song.syncedLyrics || "");
+    const parsed = parseLrc(song.syncedLyrics || "");
+    // Drop the credits/metadata block. Keep the raw parse if a song is somehow
+    // all credits, so we never end up with nothing to show.
+    const cleaned = stripCreditEntries(parsed, { title: song.title });
+    const entries = cleaned.length ? cleaned : parsed;
     (async () => {
       const textLines = entries.map((e) => e.text);
       const synthetic = { ...song, lyrics: textLines.join("\n") };

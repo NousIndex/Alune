@@ -2,6 +2,30 @@
 // real synced lyrics, not plain text. Gates the Follow button.
 export const hasTimestamps = (lrc) => /\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/.test(lrc || "");
 
+// Role labels that begin a credits line in CJK LRC files ("词：李荣浩",
+// "编曲：…", "母带后期处理录音室：…", "OP：…"). Matched as a *prefix* of the part
+// before the colon, so "弦乐编写"/"录音工作室"/"母带后期…" all catch.
+const CREDIT_PREFIX =
+  /^(作?词|作?曲|编曲|制作|出品|监制|发行|策划|统筹|企?宣|宣传|和声|和音|混音|缩混|录音|母带|音乐|弦乐|吉他|贝斯|贝司|鼓|键盘|手风琴|打击乐|配唱|配器|海报|妆发|造型|摄影|平面|视觉|导演|剪辑|经纪|执行|艺人|版权|OP|SP|词曲)/i;
+
+// A credits/metadata line: "<role label>：<value>" (full-width or half colon).
+// Conservative — real lyric lines essentially never start "<role>：".
+export function isCreditLine(text) {
+  const m = (text || "").match(/^\s*([^：:]{1,16})[：:]/);
+  return !!m && CREDIT_PREFIX.test(m[1].trim());
+}
+
+// Drop the leading credits + title-header block so karaoke shows only sung
+// lines. Removes credit lines anywhere, plus a leading "Title - Artist" header.
+export function stripCreditEntries(entries, { title = "" } = {}) {
+  const out = entries.filter((e) => !isCreditLine(e.text));
+  const t = (title || "").trim();
+  if (out.length && t && /\s[-–—]\s/.test(out[0].text) && out[0].text.includes(t)) {
+    out.shift();
+  }
+  return out;
+}
+
 // Parse an LRC string ("[mm:ss.xx] text") into time-ordered { timeMs, text }
 // entries. A single line may carry several timestamps (repeated chorus); each
 // becomes its own entry. Metadata-only lines ([ar:], [ti:], empty text) are

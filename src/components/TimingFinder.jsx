@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchSyncedCandidates } from "../lib/syncedApi.js";
-import { parseLrc } from "../lib/lrc.js";
+import { parseLrc, stripCreditEntries } from "../lib/lrc.js";
 import { updateSong } from "../lib/libraryApi.js";
 import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
@@ -51,7 +51,9 @@ export default function TimingFinder({ open, song, onClose, onSaved }) {
     try {
       const list = await fetchSyncedCandidates({ title: t, artist: artist.trim() });
       const withLines = list.map((c) => {
-        const lines = parseLrc(c.syncedLyrics);
+        const parsed = parseLrc(c.syncedLyrics);
+        const cleaned = stripCreditEntries(parsed, { title: c.trackName });
+        const lines = cleaned.length ? cleaned : parsed;
         return { ...c, lines, lineCount: lines.length };
       });
       setCandidates(withLines);
