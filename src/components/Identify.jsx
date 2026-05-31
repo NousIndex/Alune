@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { recognizeAudio } from "../lib/recognizeApi.js";
 import { buildLibIndex, findExistingFolded } from "../lib/dedup.js";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 // How long to record before auto-identifying. ~7s is enough for AudD to match
 // while keeping the upload tiny; the user can also stop early.
@@ -160,17 +161,13 @@ export default function Identify({ open, library, onSelect, onAddMissing, onClos
     }
   };
 
+  // Don't let an outside click close the modal mid-record.
+  const dismiss = useScrimDismiss(onClose, phase !== "recording" && phase !== "identifying");
+
   if (!open) return null;
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => {
-        // Don't let an outside click close the modal mid-record.
-        if (e.target.classList.contains("scrim") && phase !== "recording" && phase !== "identifying")
-          onClose();
-      }}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal identify-modal">
         <h2>Identify what's playing</h2>
 

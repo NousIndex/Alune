@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { verifyAdminToken, setAdminToken } from "../lib/admin.js";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 export default function AdminGate({ open, onClose, onSignedIn }) {
   const [token, setToken] = useState("");
@@ -19,6 +20,8 @@ export default function AdminGate({ open, onClose, onSignedIn }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, state.checking]);
 
+  const dismiss = useScrimDismiss(onClose, !state.checking);
+
   if (!open) return null;
 
   const submit = async () => {
@@ -36,13 +39,7 @@ export default function AdminGate({ open, onClose, onSignedIn }) {
   };
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => {
-        if (state.checking) return;
-        if (e.target.classList.contains("scrim")) onClose();
-      }}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal admin-modal">
         <h2>Admin sign-in</h2>
         <div className="field">

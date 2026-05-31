@@ -62,13 +62,38 @@ async function fromNetease(title, artist) {
   };
 }
 
+// From a combined artist like "周兴哲 Xing Zhe Zhou", keep only the Han tokens
+// ("周兴哲"). The Chinese name is what the CJK lyric sources index, so the
+// romanized half just hurts the match. Returns "" when there's no Han.
+function hanOnlyArtist(s) {
+  if (!s || !HAN_RE.test(s)) return "";
+  return s
+    .split(/\s+/)
+    .filter((tok) => HAN_RE.test(tok))
+    .join(" ")
+    .trim();
+}
+
 // Resolve timed lyrics for a title/artist, or null if none found. For CJK
 // titles we try NetEase first (far better coverage); otherwise LRCLIB first.
+// For a CJK artist we search the Han-only name first, then fall back to the
+// full combined string so non-Chinese artists still resolve.
 export async function fetchSyncedLyrics({ title, artist }) {
   const t = (title || "").trim();
   if (!t) return null;
   const a = (artist || "").trim();
-  const cjk = HAN_RE.test(t) || HAN_RE.test(a);
-  if (cjk) return (await fromNetease(t, a)) || (await fromLrclib(t, a)) || null;
-  return (await fromLrclib(t, a)) || (await fromNetease(t, a)) || null;
+  const han = hanOnlyArtist(a);
+  const cjk = HAN_RE.test(t) || !!han;
+
+  // Artist strings to try, in priority order, de-duped.
+  const artistTries = [...new Set([han, a].filter(Boolean))];
+  if (!artistTries.length) artistTries.push(""); // title-only search
+
+  for (const cand of artistTries) {
+    const r = cjk
+      ? (await fromNetease(t, cand)) || (await fromLrclib(t, cand))
+      : (await fromLrclib(t, cand)) || (await fromNetease(t, cand));
+    if (r) return r;
+  }
+  return null;
 }

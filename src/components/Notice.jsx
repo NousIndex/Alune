@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 export default function Notice({ open, message, onClose, seconds = 3 }) {
   const [remaining, setRemaining] = useState(seconds);
+  const dismiss = useScrimDismiss(onClose);
 
   // Reset the timer whenever a fresh notice opens.
   useEffect(() => {
@@ -31,10 +33,7 @@ export default function Notice({ open, message, onClose, seconds = 3 }) {
   if (!open) return null;
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => e.target.classList.contains("scrim") && onClose()}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal notice">
         <p className="notice-msg">{message}</p>
         <div className="modal-actions">

@@ -3,6 +3,7 @@ import { fetchLyrics } from "../lib/lyricsApi";
 import { fetchSynced } from "../lib/syncedApi";
 import { resolveAliasOrOriginal } from "../lib/aliasApi";
 import { buildLibIndex, findExistingFolded } from "../lib/dedup";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 const HAN_RE = /[㐀-鿿]/;
 const LATIN_RE = /[A-Za-z]/;
@@ -60,6 +61,8 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
     if (open) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  const dismiss = useScrimDismiss(onClose);
 
   if (!open) return null;
 
@@ -165,10 +168,7 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
   };
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => e.target.classList.contains("scrim") && onClose()}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal">
         <h2>{initial ? "Edit song" : "Add a song"}</h2>
 

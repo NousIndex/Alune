@@ -5,6 +5,7 @@ import { addSong } from "../lib/libraryApi.js";
 import { resolveAliasOrOriginal } from "../lib/aliasApi.js";
 import { toCsv, downloadCsv } from "../lib/csv.js";
 import { buildLibIndex, findExistingFolded } from "../lib/dedup.js";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 const PHASE = {
   INPUT: "input",        // typing the URL
@@ -462,6 +463,10 @@ export default function PlaylistImport({ open, library, initialMode = "url", onC
     downloadCsv(`alune-failed-${slug}.csv`, csv);
   };
 
+  const busy =
+    phase === PHASE.IMPORTING || phase === PHASE.RETRYING || phase === PHASE.SAVING;
+  const dismiss = useScrimDismiss(onClose, !busy);
+
   if (!open) return null;
 
   const totalSelected = selected.size;
@@ -471,16 +476,7 @@ export default function PlaylistImport({ open, library, initialMode = "url", onC
   const heading = isPaste ? "Add songs in bulk" : "Import a playlist";
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => {
-        const busy =
-          phase === PHASE.IMPORTING ||
-          phase === PHASE.RETRYING ||
-          phase === PHASE.SAVING;
-        if (e.target.classList.contains("scrim") && !busy) onClose();
-      }}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal modal-wide">
         <h2>{heading}</h2>
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchSynced } from "../lib/syncedApi.js";
 import { parseLrc } from "../lib/lrc.js";
 import { updateSong } from "../lib/libraryApi.js";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 // Admin dialog to fetch karaoke timing for one song, with editable search terms.
 // The stored artist is often the combined "周杰倫 Jay Chou" form which matches
@@ -31,6 +32,8 @@ export default function TimingFinder({ open, song, onClose, onSaved }) {
     if (open) window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, phase, onClose]);
+
+  const dismiss = useScrimDismiss(onClose, phase !== "saving");
 
   if (!open || !song) return null;
 
@@ -71,10 +74,7 @@ export default function TimingFinder({ open, song, onClose, onSaved }) {
   };
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) => e.target.classList.contains("scrim") && phase !== "saving" && onClose()}
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal">
         <h2>Find karaoke timing</h2>
         <p className="hint">

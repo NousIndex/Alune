@@ -8,6 +8,7 @@ import {
 import { fetchSynced } from "../lib/syncedApi.js";
 import { updateSong } from "../lib/libraryApi.js";
 import { hasTimestamps } from "../lib/lrc.js";
+import { useScrimDismiss } from "../lib/useScrimDismiss.js";
 
 const MODES = {
   HOME: "home",
@@ -156,15 +157,12 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
     onBackfillComplete?.(); // refresh the library so the Follow buttons appear
   };
 
+  const dismiss = useScrimDismiss(onClose, mode !== MODES.APPLYING);
+
   if (!open) return null;
 
   return (
-    <div
-      className="scrim open"
-      onClick={(e) =>
-        e.target.classList.contains("scrim") && mode !== MODES.APPLYING && onClose()
-      }
-    >
+    <div className="scrim open" {...dismiss}>
       <div className="modal modal-wide">
         <h2>Admin tools</h2>
 
