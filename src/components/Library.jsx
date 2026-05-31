@@ -1,6 +1,21 @@
 import { useMemo, useState } from "react";
 import { HAN, KANA, HANGUL, dominantLang } from "../lib/romanize.js";
 import { hasTimestamps } from "../lib/lrc.js";
+import { lightSearchText } from "../lib/searchIndex.js";
+
+const normQ = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+// Rank a match: title-prefix > title > artist > romanized title/artist > lyrics
+// body. `head` is the title+artist text (with romanizations); the full index
+// (which also has lyrics) was already used to decide membership.
+function searchRank(song, head, q) {
+  const t = normQ(song.title);
+  const a = normQ(song.artist);
+  if (t.startsWith(q)) return 5;
+  if (t.includes(q)) return 4;
+  if (a.includes(q)) return 3;
+  if (head.includes(q)) return 2; // pinyin/romaji of the title or artist
+  return 1; // matched only in the lyrics
+}
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -60,12 +75,28 @@ export default function Library({
     return c;
   }, [library, langById]);
 
-  const q = search.trim().toLowerCase();
-  const shown = library.filter((s) => {
+  // Title+artist text (with romanizations) for ranking — the full searchIndex
+  // gets overwritten with lyric-inclusive text, so we keep our own head copy.
+  const headIndex = useMemo(() => {
+    const m = new Map();
+    for (const s of library) m.set(s.id, lightSearchText(s));
+    return m;
+  }, [library]);
+
+  const q = normQ(search);
+  let shown = library.filter((s) => {
     if (filter !== "all" && langById.get(s.id) !== filter) return false;
     if (q && !(searchIndex.get(s.id) || "").includes(q)) return false;
     return true;
   });
+  // Rank matches so the song *titled* 妥協 beats songs that only mention it in
+  // the lyrics. Keep library order when there's no query, and as a tiebreaker.
+  if (q) {
+    shown = shown
+      .map((s, i) => ({ s, i, r: searchRank(s, headIndex.get(s.id) || "", q) }))
+      .sort((x, y) => y.r - x.r || x.i - y.i)
+      .map((x) => x.s);
+  }
 
   const indexing =
     indexProgress &&
