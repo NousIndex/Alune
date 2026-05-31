@@ -44,6 +44,8 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
   const [mode, setMode] = useState(MODES.HOME);
   const [overrides, setOverrides] = useState([]);
   const [auto, setAuto] = useState([]);
+  const [autoSel, setAutoSel] = useState(() => new Set());
+  const [blocking, setBlocking] = useState(false);
   const [loadState, setLoadState] = useState({ loading: false, error: "" });
   const [form, setForm] = useState({ original: "", alias: "" });
   const [saving, setSaving] = useState(false);
@@ -65,6 +67,7 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
     setApplyResult(null);
     setScanState({ scanning: false, error: "" });
     setSyncState(null);
+    setAutoSel(new Set());
     refresh();
   }, [open]);
 
@@ -88,15 +91,38 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
     }
   };
 
-  const handleBlock = async (name) => {
-    const target = normName(name);
-    // Songs already stored under the combined form that we can fix in place.
-    const affected = (library || [])
-      .map((s) => ({ song: s, fixed: strippedArtistFor(s.artist, target) }))
-      .filter((x) => x.fixed);
+  const toggleAuto = (name) =>
+    setAutoSel((prev) => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  const toggleAutoAll = () =>
+    setAutoSel((prev) =>
+      prev.size === auto.length ? new Set() : new Set(auto.map((a) => a.name))
+    );
+
+  // Block every selected auto alias, and fix any songs already stored under the
+  // combined form. One confirm, one pass.
+  const handleBlockSelected = async () => {
+    const names = [...autoSel];
+    if (!names.length) return;
+    const targets = names.map(normName);
+
+    // Songs we can repair in place (matched against any selected name).
+    const affected = [];
+    for (const s of library || []) {
+      for (const target of targets) {
+        const fixed = strippedArtistFor(s.artist, target);
+        if (fixed) {
+          affected.push({ song: s, fixed });
+          break;
+        }
+      }
+    }
 
     const ok = window.confirm(
-      `Stop auto-combining "${name}" with a Chinese/Latin name?` +
+      `Stop auto-combining ${names.length} name${names.length === 1 ? "" : "s"}?` +
         (affected.length
           ? `\n\nThis will also fix ${affected.length} existing song${
               affected.length === 1 ? "" : "s"
@@ -105,8 +131,15 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
     );
     if (!ok) return;
 
+    setBlocking(true);
     try {
-      await blockAlias(name);
+      for (const name of names) {
+        try {
+          await blockAlias(name);
+        } catch {
+          /* keep going; one failure shouldn't abort the batch */
+        }
+      }
       let fixed = 0;
       for (const { song, fixed: newArtist } of affected) {
         try {
@@ -116,10 +149,11 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
           /* dedup collision or transient — skip; admin can edit manually */
         }
       }
+      setAutoSel(new Set());
       await refresh();
       if (fixed) onBackfillComplete?.(); // pull fresh library into App
-    } catch (e) {
-      alert(e.message || "Couldn't remove");
+    } finally {
+      setBlocking(false);
     }
   };
 
@@ -297,33 +331,52 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
               </div>
 
               {auto.length > 0 && (
-                <div className="alias-list">
+                <div className="alias-list alias-auto">
                   <div className="hint">
-                    Auto-resolved from MusicBrainz. Remove (✕) to stop combining a name —
-                    e.g. an English band that picked up a Chinese fan-translation.
+                    Auto-resolved from MusicBrainz. Tick the names to stop combining —
+                    e.g. English bands that picked up a Chinese fan-translation.
+                  </div>
+                  <div className="playlist-tools">
+                    <button className="btn text sm" onClick={toggleAutoAll}>
+                      {autoSel.size === auto.length ? "Deselect all" : "Select all"}
+                    </button>
+                    <button
+                      className="btn ghost sm"
+                      onClick={handleBlockSelected}
+                      disabled={autoSel.size === 0 || blocking}
+                      title="Stop auto-combining the ticked names and fix existing songs"
+                    >
+                      {blocking
+                        ? "Removing…"
+                        : `Remove selected${autoSel.size ? ` (${autoSel.size})` : ""}`}
+                    </button>
                   </div>
                   <table>
                     <thead>
                       <tr>
+                        <th></th>
                         <th>Name</th>
                         <th>Auto alias</th>
-                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
                       {auto.map((a) => (
-                        <tr key={a.name}>
+                        <tr
+                          key={a.name}
+                          className={autoSel.has(a.name) ? "row-sel" : ""}
+                          onClick={() => toggleAuto(a.name)}
+                        >
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={autoSel.has(a.name)}
+                              onChange={() => toggleAuto(a.name)}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label={`Select ${a.name}`}
+                            />
+                          </td>
                           <td>{a.name}</td>
                           <td className="combined">{a.alias}</td>
-                          <td>
-                            <button
-                              className="btn text sm"
-                              onClick={() => handleBlock(a.name)}
-                              title="Stop auto-combining this name"
-                            >
-                              ✕
-                            </button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>

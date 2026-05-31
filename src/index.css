@@ -1384,6 +1384,8 @@ rt {
 .changes-table .to {
   color: var(--amber-soft);
 }
+.alias-auto tbody tr { cursor: pointer; }
+.alias-auto tr.row-sel { background: rgba(226, 166, 78, 0.1); }
 
 .changes-table { margin-top: 10px; max-height: 44vh; display: block; overflow-y: auto; }
 
