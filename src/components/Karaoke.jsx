@@ -11,6 +11,10 @@ import { parseLrc } from "../lib/lrc.js";
 
 const RATE_STEP = 1.06;
 const SRC_LABEL = { lrclib: "LRCLIB", netease: "NetEase", stored: "saved timing" };
+const fmtClock = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
 
 export default function Karaoke({ song, settings, lyricsClass, onExit }) {
   const [phase, setPhase] = useState("loading"); // loading | ready
@@ -30,6 +34,21 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
   const currentRef = useRef(-1);
   const rafRef = useRef(0);
   const lineRefs = useRef([]);
+  // Progress bar + time readout are written imperatively (no per-frame React
+  // re-render). totalMsRef is the song length the bar fills against.
+  const progressRef = useRef(null);
+  const timeRef = useRef(null);
+  const totalMsRef = useRef(0);
+
+  const renderProgress = (songMs) => {
+    const total = totalMsRef.current || 1;
+    if (progressRef.current) {
+      progressRef.current.style.width = `${Math.min(100, Math.max(0, (songMs / total) * 100))}%`;
+    }
+    if (timeRef.current) {
+      timeRef.current.textContent = `${fmtClock(songMs)} / ${fmtClock(total)}`;
+    }
+  };
 
   useEffect(() => {
     rateRef.current = rate;
@@ -55,6 +74,11 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
       if (cancelled) return;
       const renderedLines = res.lines.filter((l) => !l.blank);
       const n = Math.min(renderedLines.length, entries.length);
+      // Fill the bar against the song's real length when we know it, else the
+      // last line's time plus a short tail so it doesn't pin at 100% on the
+      // final line.
+      const lastMs = n ? entries[n - 1].timeMs : 0;
+      totalMsRef.current = Math.max(lastMs + 3000, (Number(song.duration) || 0) * 1000);
       setTimed(entries.slice(0, n));
       setRendered(renderedLines.slice(0, n));
       setSource(song.syncedSource || "stored");
@@ -80,6 +104,7 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
     const tick = () => {
       const songMs = baseSongRef.current + (performance.now() - baseClockRef.current) * rateRef.current;
       songMsRef.current = songMs;
+      renderProgress(songMs);
       let idx = -1;
       for (let i = 0; i < timed.length; i++) {
         if (timed[i].timeMs <= songMs) idx = i;
@@ -134,6 +159,7 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
     baseSongRef.current = songMs;
     baseClockRef.current = performance.now();
     songMsRef.current = songMs;
+    renderProgress(songMs); // reflect seeks/pauses immediately, even when stopped
   };
   const play = () => {
     anchorTo(songMsRef.current); // resume from where we are
@@ -173,10 +199,15 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
         <button className="kbtn" onClick={() => adjustPace(RATE_STEP)} title="Faster">
           +
         </button>
+        <span className="ktime" ref={timeRef}>0:00</span>
         {source && <span className="ksrc">{SRC_LABEL[source] || source}</span>}
         <button className="kbtn kexit" onClick={onExit} title="Exit Follow mode">
           ✕ Exit
         </button>
+      </div>
+
+      <div className="karaoke-progress">
+        <div className="karaoke-progress-fill" ref={progressRef} />
       </div>
 
       <div className="karaoke-hint">Tap the line you're on to re-sync · use −/+ to match the pace</div>

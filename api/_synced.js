@@ -101,3 +101,89 @@ export async function fetchSyncedLyrics({ title, artist }) {
   }
   return null;
 }
+
+/* ---------------- Candidate listing (admin manual pick) ---------------- */
+
+// All LRCLIB search hits that carry synced lyrics — the search response already
+// includes syncedLyrics, so this is one request, no per-candidate fetch.
+async function lrclibCandidates(title, artist) {
+  const q = new URLSearchParams({ track_name: title });
+  if (artist) q.set("artist_name", artist);
+  const arr = await fetchJson(`${LRCLIB}/search?${q}`, {
+    headers: { "User-Agent": "Alune (https://github.com/) lyrics reader" },
+  });
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((c) => c && hasTimestamps(c.syncedLyrics))
+    .map((c) => ({
+      source: "lrclib",
+      trackName: c.trackName || "",
+      artistName: c.artistName || "",
+      albumName: c.albumName || "",
+      duration: Math.round(Number(c.duration) || 0),
+      syncedLyrics: c.syncedLyrics,
+    }));
+}
+
+// NetEase candidates need a lyric fetch per song, so cap to the top few.
+async function neteaseCandidates(title, artist) {
+  const base = (process.env.NETEASE_API_BASE || "").replace(/\/+$/, "");
+  if (!base) return [];
+  const keywords = [title, artist].filter(Boolean).join(" ");
+  const search = await fetchJson(
+    `${base}/search?keywords=${encodeURIComponent(keywords)}&limit=5&type=1`
+  );
+  const songs = (search?.result?.songs || []).slice(0, 5);
+  const out = [];
+  for (const song of songs) {
+    if (!song?.id) continue;
+    const lyric = await fetchJson(`${base}/lyric?id=${song.id}`);
+    const lrc = lyric?.lrc?.lyric || "";
+    if (!hasTimestamps(lrc)) continue;
+    out.push({
+      source: "netease",
+      trackName: song.name || "",
+      artistName: (song.artists || []).map((a) => a.name).filter(Boolean).join(", "),
+      albumName: song.album?.name || "",
+      duration: Math.round((Number(song.duration) || 0) / 1000),
+      syncedLyrics: lrc,
+    });
+  }
+  return out;
+}
+
+// Gather a de-duped candidate list for an admin to choose from. Applies the same
+// Han-only/full try variants as the auto path, but collects all hits instead of
+// returning the first.
+export async function searchSyncedCandidates({ title, artist }) {
+  const t = (title || "").trim();
+  if (!t) return [];
+  const a = (artist || "").trim();
+  const hanT = keepHan(t);
+  const cjk = !!hanT;
+  const titleTries = cjk ? [...new Set([hanT, t].filter(Boolean))] : [t];
+  const primaryArtist = cjk ? keepHan(a) : dropHan(a);
+  const artistTries = [...new Set([primaryArtist, a].filter(Boolean))];
+  if (!artistTries.length) artistTries.push("");
+
+  const seen = new Set();
+  const out = [];
+  const add = (c) => {
+    const key = `${c.source}|${c.trackName}|${c.artistName}|${c.duration}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(c);
+  };
+
+  for (const tt of titleTries) {
+    for (const aa of artistTries) {
+      for (const c of await lrclibCandidates(tt, aa)) add(c);
+      if (out.length >= 12) break;
+    }
+    if (out.length >= 12) break;
+  }
+  if (out.length < 12) {
+    for (const c of await neteaseCandidates(titleTries[0], artistTries[0])) add(c);
+  }
+  return out.slice(0, 12);
+}

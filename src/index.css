@@ -535,6 +535,23 @@ rt {
   padding: 2px 8px;
 }
 .khint { font-size: 0.82rem; color: var(--paper-dim); }
+.ktime {
+  font-size: 0.78rem;
+  color: var(--paper-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 86px;
+  text-align: center;
+}
+.karaoke-progress {
+  height: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+.karaoke-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--amber);
+}
 .karaoke-hint {
   padding: 6px clamp(14px, 4vw, 38px);
   font-size: 0.75rem;
@@ -547,6 +564,34 @@ rt {
 .lyrics.follow .lyric-line.active { opacity: 1; background: rgba(226, 166, 78, 0.12); }
 
 .hint.synced-ok { color: var(--amber-soft); }
+
+/* Candidate pick-list in the timing finder */
+.candidate-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.candidate {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+}
+.candidate:last-child { border-bottom: none; }
+.candidate:hover { background: var(--panel-2); }
+.candidate.sel { background: rgba(226, 166, 78, 0.1); }
+.candidate input { margin-top: 3px; flex-shrink: 0; }
+.cand-body { min-width: 0; flex: 1; }
+.cand-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cand-main strong { color: var(--paper); font-size: 0.92rem; }
+.cand-artist { font-size: 0.8rem; color: var(--paper-dim); }
+.cand-meta { font-size: 0.72rem; color: var(--paper-faint); margin-top: 2px; }
 
 .engine-note {
   margin-top: 34px;

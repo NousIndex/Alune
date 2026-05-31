@@ -15,3 +15,15 @@ export async function fetchSynced({ title, artist }) {
     source: json.source || "",
   };
 }
+
+// Multiple candidates for an admin to choose from (manual TimingFinder).
+export async function fetchSyncedCandidates({ title, artist }) {
+  const t = (title || "").trim();
+  if (!t) return [];
+  const q = new URLSearchParams({ list: "1", title: t });
+  if (artist && artist.trim()) q.set("artist", artist.trim());
+  const res = await fetch(`/api/synced?${q}`);
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Candidate lookup failed (${res.status})`);
+  return json?.candidates || [];
+}

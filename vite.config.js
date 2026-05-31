@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveAlias, normalizeName, formatPair, looksLikeMojibake } from "./api/_aliasing.js";
 import { fetchPlaylist } from "./api/_playlist.js";
-import { fetchSyncedLyrics } from "./api/_synced.js";
+import { fetchSyncedLyrics, searchSyncedCandidates } from "./api/_synced.js";
 import { otherChineseVariant, variantFallbackEnabled } from "./api/_chinese.js";
 
 const UPSTREAM = "https://lyrics.lewdhutao.my.eu.org";
@@ -603,6 +603,10 @@ function devSyncedProxy() {
           const title = (url.searchParams.get("title") || "").trim();
           const artist = (url.searchParams.get("artist") || "").trim();
           if (!title) return send(400, { error: "title is required" });
+          if (url.searchParams.get("list")) {
+            const candidates = await searchSyncedCandidates({ title, artist });
+            return send(200, { candidates });
+          }
           const result = await fetchSyncedLyrics({ title, artist });
           return send(200, result ? { found: true, ...result } : { found: false });
         } catch (e) {
