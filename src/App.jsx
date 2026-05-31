@@ -10,6 +10,7 @@ import PlaylistImport from "./components/PlaylistImport.jsx";
 import AdminTools from "./components/AdminTools.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
 import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js";
+import { fetchSynced } from "./lib/syncedApi.js";
 import { getAdminToken, clearAdminToken } from "./lib/admin.js";
 import {
   lightSearchText,
@@ -138,6 +139,33 @@ export default function App() {
     setEditorOpen(true);
   };
 
+  // Admin: fetch (or refresh) timed lyrics for just the open song. Additive —
+  // only the timing fields change, never the saved lyrics. Returns whether it
+  // found anything so the Reader can show inline feedback.
+  const handleFindTiming = async () => {
+    if (!activeSong) return false;
+    const r = await fetchSynced({ title: activeSong.title, artist: activeSong.artist });
+    if (!r?.syncedLyrics) {
+      setNotice({
+        open: true,
+        message: `No timed lyrics found on LRCLIB for “${activeSong.title}”.`,
+      });
+      return false;
+    }
+    const updated = await updateSong({
+      id: activeSong.id,
+      syncedLyrics: r.syncedLyrics,
+      duration: r.duration,
+      syncedSource: r.source,
+    });
+    setLibrary((lib) => lib.map((s) => (s.id === updated.id ? updated : s)));
+    setNotice({
+      open: true,
+      message: `Timed lyrics added to “${updated.title}” (${r.source}) — Follow mode is ready.`,
+    });
+    return true;
+  };
+
   const handleDeleteActive = async () => {
     if (!activeSong) return;
     const ok = window.confirm(
@@ -255,6 +283,7 @@ export default function App() {
             isAdmin={isAdmin}
             onEdit={handleEditActive}
             onDelete={handleDeleteActive}
+            onFindTiming={handleFindTiming}
           />
         ) : (
           <div className="center-state">
