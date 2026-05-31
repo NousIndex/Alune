@@ -59,7 +59,12 @@ export default function Karaoke({ song, settings, lyricsClass, onExit }) {
       setRendered(renderedLines.slice(0, n));
       setSource(song.syncedSource || "stored");
       lineRefs.current = [];
+      // Auto-start the clock from the top the moment Follow opens.
+      baseSongRef.current = 0;
+      baseClockRef.current = performance.now();
+      songMsRef.current = 0;
       setPhase("ready");
+      setPlaying(true);
     })();
 
     return () => {
