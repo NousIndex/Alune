@@ -62,35 +62,33 @@ async function fromNetease(title, artist) {
   };
 }
 
-// Keep only the Han tokens of a mixed string — drops the romanized/English
-// half that the CJK lyric sources don't index. Both halves show up in this
-// library: combined artists ("周兴哲 Xing Zhe Zhou" → "周兴哲") and bilingual
-// titles ("你不属于我 You Don't Belong to Me" → "你不属于我"). Returns "" when
-// there's no Han at all.
-function hanOnly(s) {
-  if (!s || !HAN_RE.test(s)) return "";
-  return s
-    .split(/\s+/)
-    .filter((tok) => HAN_RE.test(tok))
-    .join(" ")
-    .trim();
-}
+// Keep only the whitespace tokens that contain Han (drop the romanized half).
+const keepHan = (s) =>
+  (s || "").split(/\s+/).filter((tok) => HAN_RE.test(tok)).join(" ").trim();
+// Keep only the tokens WITHOUT Han (drop a fan-translated Chinese name).
+const dropHan = (s) =>
+  (s || "").split(/\s+/).filter((tok) => tok && !HAN_RE.test(tok)).join(" ").trim();
 
-// Resolve timed lyrics for a title/artist, or null if none found. For CJK we
-// try NetEase first (far better coverage); otherwise LRCLIB first. Both the
-// title and artist are searched Han-only first, then with the full string as a
-// fallback so non-Chinese / un-stripped entries still resolve.
+// Resolve timed lyrics for a title/artist, or null if none found.
+//
+// The song's language follows the TITLE, not the artist: a Chinese title means
+// a Chinese song (prefer the Han artist name, e.g. "周兴哲"); a non-Han title
+// means we should prefer the Latin artist name and drop any Chinese translation
+// (e.g. "聯合公園 Linkin Park" → "Linkin Park", since lyric DBs index the band
+// under its real name). The full string is always kept as a fallback.
 export async function fetchSyncedLyrics({ title, artist }) {
   const t = (title || "").trim();
   if (!t) return null;
   const a = (artist || "").trim();
-  const hanT = hanOnly(t);
-  const hanA = hanOnly(a);
-  const cjk = !!hanT || !!hanA;
+  const hanT = keepHan(t);
+  const cjk = !!hanT; // Chinese song?
 
-  // De-duped try lists, most-precise (Han-only) first.
-  const titleTries = [...new Set([hanT, t].filter(Boolean))];
-  const artistTries = [...new Set([hanA, a].filter(Boolean))];
+  // Chinese title → search Han-only first; otherwise as-is.
+  const titleTries = cjk ? [...new Set([hanT, t].filter(Boolean))] : [t];
+
+  // Prefer the artist name in the song's own script, full string as fallback.
+  const primaryArtist = cjk ? keepHan(a) : dropHan(a);
+  const artistTries = [...new Set([primaryArtist, a].filter(Boolean))];
   if (!artistTries.length) artistTries.push(""); // title-only search
 
   for (const tt of titleTries) {

@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
-import { resolveAlias, normalizeName, formatPair } from "./api/_aliasing.js";
+import { resolveAlias, normalizeName, formatPair, looksLikeMojibake } from "./api/_aliasing.js";
 import { fetchPlaylist } from "./api/_playlist.js";
 import { fetchSyncedLyrics } from "./api/_synced.js";
 import { otherChineseVariant, variantFallbackEnabled } from "./api/_chinese.js";
@@ -56,6 +56,17 @@ function devRedis() {
       const db = readAliasDb();
       const raw = db.kv?.[key];
       return raw === undefined ? null : raw;
+    },
+    async mget(...keys) {
+      const db = readAliasDb();
+      return keys.map((k) => (db.kv && k in db.kv ? db.kv[k] : null));
+    },
+    async keys(pattern) {
+      const db = readAliasDb();
+      const rx = new RegExp(
+        "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"
+      );
+      return Object.keys(db.kv || {}).filter((k) => rx.test(k));
     },
     async set(key, value /* opts unused in dev */) {
       const db = readAliasDb();
@@ -356,8 +367,8 @@ function devAliasesProxy(adminToken) {
         const redis = devRedis();
         try {
           if (req.method === "GET") {
-            const all = await redis.hgetall("alias:overrides");
-            const entries = Object.entries(all || {})
+            const all = (await redis.hgetall("alias:overrides")) || {};
+            const overrides = Object.entries(all)
               .map(([k, v]) => {
                 const entry = typeof v === "string" ? JSON.parse(v) : v;
                 if (!entry) return null;
@@ -370,17 +381,40 @@ function devAliasesProxy(adminToken) {
               })
               .filter(Boolean)
               .sort((a, b) => a.original.localeCompare(b.original));
-            return send(200, { overrides: entries });
+
+            const auto = [];
+            const cacheKeys = await redis.keys("alias:cache:*");
+            if (cacheKeys.length) {
+              const vals = await redis.mget(...cacheKeys);
+              cacheKeys.forEach((key, i) => {
+                const name = key.slice("alias:cache:".length);
+                const alias = vals[i];
+                if (!alias || looksLikeMojibake(alias)) return;
+                if (name in all) return;
+                auto.push({ name, alias, formatted: formatPair(name, alias) });
+              });
+              auto.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            return send(200, { overrides, auto });
           }
           if (req.method === "POST") {
             if (!isAdmin()) return send(401, { error: "Admin token required" });
             const body = await readBody(req);
             const original = (body.original || "").trim();
+            if (!original) return send(400, { error: "original is required" });
+            const norm = normalizeName(original);
+            if (body.block) {
+              await redis.hset("alias:overrides", {
+                [norm]: JSON.stringify({ original, alias: "" }),
+              });
+              await redis.del(`alias:cache:${norm}`);
+              return send(200, { ok: true, blocked: true });
+            }
             const alias = (body.alias || "").trim();
-            if (!original || !alias) {
+            if (!alias) {
               return send(400, { error: "Both 'original' and 'alias' are required" });
             }
-            const norm = normalizeName(original);
             await redis.hset("alias:overrides", {
               [norm]: JSON.stringify({ original, alias }),
             });

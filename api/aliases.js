@@ -5,7 +5,7 @@
 //   field: <normalized lowercase trimmed input name>
 //   value: { original: "<as typed>", alias: "<counterpart>" }
 
-import { kvClient, normalizeName, formatPair } from "./_aliasing.js";
+import { kvClient, normalizeName, formatPair, looksLikeMojibake } from "./_aliasing.js";
 
 function requireAdmin(req) {
   const want = process.env.ADMIN_TOKEN;
@@ -45,24 +45,52 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "GET") {
-      // Listing overrides doesn't require admin — useful for the UI to render
-      // existing pairs alongside auto-resolved ones. Mutations are gated.
-      const all = await redis.hgetall("alias:overrides");
-      const entries = Object.entries(all || {})
+      // Listing doesn't require admin — the UI renders manual pairs alongside
+      // the auto-resolved (MusicBrainz-cached) ones. Mutations are gated.
+      const all = (await redis.hgetall("alias:overrides")) || {};
+      const overrides = Object.entries(all)
         .map(([k, v]) => parseEntry(k, v))
         .filter(Boolean)
         .sort((a, b) => a.original.localeCompare(b.original));
-      return res.status(200).json({ overrides: entries });
+
+      // Auto aliases = cached MusicBrainz results that actually produced a
+      // counterpart, and aren't shadowed by a manual override or block.
+      const auto = [];
+      const cacheKeys = await redis.keys("alias:cache:*");
+      if (cacheKeys.length) {
+        const vals = await redis.mget(...cacheKeys);
+        cacheKeys.forEach((key, i) => {
+          const name = key.slice("alias:cache:".length);
+          const alias = vals[i];
+          if (!alias || looksLikeMojibake(alias)) return; // miss or poisoned
+          if (name in all) return; // a manual override/block wins
+          auto.push({ name, alias, formatted: formatPair(name, alias) });
+        });
+        auto.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      return res.status(200).json({ overrides, auto });
     }
 
     if (req.method === "POST") {
       requireAdmin(req);
       const original = (req.body?.original || "").trim();
+      if (!original) return res.status(400).json({ error: "original is required" });
+      const norm = normalizeName(original);
+
+      // Block: pin this name to "no counterpart" so MusicBrainz won't combine it
+      // (e.g. an English band that was getting a Chinese fan-translation). Stored
+      // as an empty override, which resolveAlias treats as authoritative.
+      if (req.body?.block) {
+        await redis.hset("alias:overrides", { [norm]: JSON.stringify({ original, alias: "" }) });
+        await redis.del(`alias:cache:${norm}`);
+        return res.status(200).json({ ok: true, blocked: true });
+      }
+
       const alias = (req.body?.alias || "").trim();
-      if (!original || !alias) {
+      if (!alias) {
         return res.status(400).json({ error: "Both 'original' and 'alias' are required" });
       }
-      const norm = normalizeName(original);
       await redis.hset("alias:overrides", { [norm]: JSON.stringify({ original, alias }) });
       // Invalidate any MB cache for the same name so the override takes effect
       // on the next resolve.

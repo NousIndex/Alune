@@ -104,16 +104,18 @@ export async function resolveAlias(name, redis) {
 
   if (redis) {
     const override = await redis.hget("alias:overrides", norm);
-    if (override) {
-      const aliasName = typeof override === "string" ? override : (override?.alias || null);
-      if (aliasName && !looksLikeMojibake(aliasName)) {
-        return {
-          original,
-          alias: aliasName,
-          formatted: formatPair(original, aliasName),
-          source: "override",
-        };
-      }
+    // An override is authoritative — including an empty "block" entry, which
+    // means "this name has no counterpart; don't combine and don't ask
+    // MusicBrainz." Never fall through to the MB cache for a pinned name.
+    if (override !== null && override !== undefined) {
+      const aliasRaw = typeof override === "string" ? override : (override?.alias ?? null);
+      const aliasName = aliasRaw && !looksLikeMojibake(aliasRaw) ? aliasRaw : null;
+      return {
+        original,
+        alias: aliasName,
+        formatted: aliasName ? formatPair(original, aliasName) : original,
+        source: "override",
+      };
     }
     const cached = await redis.get(`alias:cache:${norm}`);
     // Ignore poisoned cache entries and fall through to re-resolve, overwriting

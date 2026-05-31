@@ -31,6 +31,27 @@ export async function listOverrides() {
   return json.overrides || [];
 }
 
+// Manual overrides + the auto-resolved (MusicBrainz-cached) aliases.
+export async function listAliases() {
+  const res = await fetch("/api/aliases");
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Failed to load aliases (${res.status})`);
+  return { overrides: json.overrides || [], auto: json.auto || [] };
+}
+
+// Pin a name to "no counterpart" so MusicBrainz won't combine it (e.g. an
+// English band that was getting a Chinese fan-translation).
+export async function blockAlias(name) {
+  const res = await fetch("/api/aliases", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...adminHeaders() },
+    body: JSON.stringify({ original: name, block: true }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Failed to remove alias (${res.status})`);
+  return json;
+}
+
 export async function saveOverride(original, alias) {
   const res = await fetch("/api/aliases", {
     method: "POST",

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import {
-  listOverrides,
+  listAliases,
   saveOverride,
   deleteOverride,
+  blockAlias,
   backfill,
 } from "../lib/aliasApi.js";
 import { fetchSynced } from "../lib/syncedApi.js";
@@ -19,9 +20,30 @@ const MODES = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Tiny client-side mirrors of the server's name helpers (importing _aliasing.js
+// would pull in the KV client). Used to fix songs already stored combined.
+const HAN_RE = /[㐀-鿿豈-﫿]/;
+const LATIN_RE = /[A-Za-z]/;
+const normName = (s) => (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
+const keepHan = (s) => (s || "").split(/\s+/).filter((t) => HAN_RE.test(t)).join(" ").trim();
+const dropHan = (s) => (s || "").split(/\s+/).filter((t) => t && !HAN_RE.test(t)).join(" ").trim();
+
+// The corrected artist if `artist` is the combined form of the blocked `target`
+// (normalized), else null. Keeps the side that matches the blocked name.
+function strippedArtistFor(artist, target) {
+  const a = artist || "";
+  if (!HAN_RE.test(a) || !LATIN_RE.test(a)) return null; // not a combined name
+  const latin = dropHan(a);
+  const han = keepHan(a);
+  if (normName(latin) === target && latin !== a) return latin;
+  if (normName(han) === target && han !== a) return han;
+  return null;
+}
+
 export default function AdminTools({ open, library, onClose, onBackfillComplete }) {
   const [mode, setMode] = useState(MODES.HOME);
   const [overrides, setOverrides] = useState([]);
+  const [auto, setAuto] = useState([]);
   const [loadState, setLoadState] = useState({ loading: false, error: "" });
   const [form, setForm] = useState({ original: "", alias: "" });
   const [saving, setSaving] = useState(false);
@@ -57,11 +79,47 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
   const refresh = async () => {
     setLoadState({ loading: true, error: "" });
     try {
-      const list = await listOverrides();
-      setOverrides(list);
+      const { overrides: o, auto: a } = await listAliases();
+      setOverrides(o);
+      setAuto(a);
       setLoadState({ loading: false, error: "" });
     } catch (e) {
-      setLoadState({ loading: false, error: e.message || "Couldn't load overrides" });
+      setLoadState({ loading: false, error: e.message || "Couldn't load aliases" });
+    }
+  };
+
+  const handleBlock = async (name) => {
+    const target = normName(name);
+    // Songs already stored under the combined form that we can fix in place.
+    const affected = (library || [])
+      .map((s) => ({ song: s, fixed: strippedArtistFor(s.artist, target) }))
+      .filter((x) => x.fixed);
+
+    const ok = window.confirm(
+      `Stop auto-combining "${name}" with a Chinese/Latin name?` +
+        (affected.length
+          ? `\n\nThis will also fix ${affected.length} existing song${
+              affected.length === 1 ? "" : "s"
+            } stored under the combined name.`
+          : "")
+    );
+    if (!ok) return;
+
+    try {
+      await blockAlias(name);
+      let fixed = 0;
+      for (const { song, fixed: newArtist } of affected) {
+        try {
+          await updateSong({ id: song.id, artist: newArtist });
+          fixed++;
+        } catch {
+          /* dedup collision or transient — skip; admin can edit manually */
+        }
+      }
+      await refresh();
+      if (fixed) onBackfillComplete?.(); // pull fresh library into App
+    } catch (e) {
+      alert(e.message || "Couldn't remove");
     }
   };
 
@@ -218,13 +276,15 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
                       {overrides.map((o) => (
                         <tr key={o.key}>
                           <td>{o.original}</td>
-                          <td>{o.alias}</td>
-                          <td className="combined">{o.formatted}</td>
+                          <td>{o.alias || "—"}</td>
+                          <td className="combined">
+                            {o.alias ? o.formatted : <em>blocked</em>}
+                          </td>
                           <td>
                             <button
                               className="btn text sm"
                               onClick={() => handleDelete(o.original)}
-                              title="Remove this pair"
+                              title={o.alias ? "Remove this pair" : "Un-block this name"}
                             >
                               ✕
                             </button>
@@ -235,6 +295,41 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
                   </table>
                 )}
               </div>
+
+              {auto.length > 0 && (
+                <div className="alias-list">
+                  <div className="hint">
+                    Auto-resolved from MusicBrainz. Remove (✕) to stop combining a name —
+                    e.g. an English band that picked up a Chinese fan-translation.
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Auto alias</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auto.map((a) => (
+                        <tr key={a.name}>
+                          <td>{a.name}</td>
+                          <td className="combined">{a.alias}</td>
+                          <td>
+                            <button
+                              className="btn text sm"
+                              onClick={() => handleBlock(a.name)}
+                              title="Stop auto-combining this name"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
 
             <section className="admin-section">
