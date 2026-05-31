@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { renderSong, dominantLang } from "../lib/romanize.js";
+import { renderSong, dominantLang, HAN, KANA, HANGUL } from "../lib/romanize.js";
+import { hasTimestamps } from "../lib/lrc.js";
+import Karaoke from "./Karaoke.jsx";
 
 const CREDIT = {
   zh: "中文 · Pinyin",
@@ -16,6 +18,11 @@ function isChineseSong(song) {
   if (song.lang && song.lang !== "auto") return song.lang === "zh";
   return dominantLang(song.lyrics) === "zh";
 }
+// Any CJK script means there are readings to hide (covers mixed-language songs).
+function hasReadings(song) {
+  const t = song.lyrics || "";
+  return HAN.test(t) || KANA.test(t) || HANGUL.test(t);
+}
 
 // Cycle button face: shows the variant currently applied.
 const ZH_LABEL = {
@@ -29,6 +36,7 @@ export default function Reader({
   settings,
   onToggleRomaji,
   onCycleZhVariant,
+  onToggleHideOriginal,
   onResize,
   isAdmin,
   onEdit,
@@ -36,10 +44,18 @@ export default function Reader({
 }) {
   const zhVariant = settings.zhVariant || "original";
   const showVariant = isChineseSong(song);
+  const showHideOriginal = hasReadings(song);
+  const hideOriginal = !!settings.hideOriginal;
   const [status, setStatus] = useState("loading");
   const [lines, setLines] = useState([]);
   const [note, setNote] = useState("");
   const [active, setActive] = useState(-1);
+  const [follow, setFollow] = useState(false);
+
+  // The lyrics-container class is shared with Karaoke so Reading / reading-only
+  // styling stays identical in Follow mode.
+  const lyricsClass =
+    "lyrics" + (settings.showRomaji ? "" : " no-ruby") + (hideOriginal ? " reading-only" : "");
 
   // Re-romanize when the song/content changes — and when the Chinese variant
   // changes, since that rewrites the actual characters (romaji visibility and
@@ -93,12 +109,34 @@ export default function Reader({
               {ZH_LABEL[zhVariant].text}
             </button>
           )}
+          {showHideOriginal && (
+            <button
+              className={"ctrl" + (hideOriginal ? "" : " on")}
+              title={
+                hideOriginal
+                  ? "Reading only — click to show the original characters"
+                  : "Hide the original characters, show only the reading"
+              }
+              onClick={onToggleHideOriginal}
+            >
+              {hideOriginal ? "◌ Original" : "◉ Original"}
+            </button>
+          )}
           <button className="ctrl icon" title="Smaller" onClick={() => onResize(-0.12)}>
             A−
           </button>
           <button className="ctrl icon" title="Larger" onClick={() => onResize(0.12)}>
             A+
           </button>
+          {hasTimestamps(song.syncedLyrics) && (
+            <button
+              className={"ctrl" + (follow ? " on" : "")}
+              title="Follow mode: auto-scroll and highlight the current line for karaoke"
+              onClick={() => setFollow((f) => !f)}
+            >
+              {follow ? "◉ Follow" : "◌ Follow"}
+            </button>
+          )}
           {isAdmin && (
             <>
               <button className="ctrl" title="Edit this song" onClick={onEdit}>
@@ -116,26 +154,35 @@ export default function Reader({
         </div>
       </div>
 
-      <div className="reader-wrap">
-        <article className="reader">
-          <div className="credit">{creditFor(song)}</div>
-          <div className={"lyrics" + (settings.showRomaji ? "" : " no-ruby")}>
-            {lines.map((ln, i) =>
-              ln.blank ? (
-                <div key={i} className="lyric-line blank" />
-              ) : (
-                <div
-                  key={i}
-                  className={"lyric-line" + (active === i ? " active" : "")}
-                  onClick={() => setActive((a) => (a === i ? -1 : i))}
-                  dangerouslySetInnerHTML={{ __html: ln.html }}
-                />
-              )
-            )}
-          </div>
-          {note && <div className="engine-note">{note}</div>}
-        </article>
-      </div>
+      {follow ? (
+        <Karaoke
+          song={song}
+          settings={settings}
+          lyricsClass={lyricsClass}
+          onExit={() => setFollow(false)}
+        />
+      ) : (
+        <div className="reader-wrap">
+          <article className="reader">
+            <div className="credit">{creditFor(song)}</div>
+            <div className={lyricsClass}>
+              {lines.map((ln, i) =>
+                ln.blank ? (
+                  <div key={i} className="lyric-line blank" />
+                ) : (
+                  <div
+                    key={i}
+                    className={"lyric-line" + (active === i ? " active" : "")}
+                    onClick={() => setActive((a) => (a === i ? -1 : i))}
+                    dangerouslySetInnerHTML={{ __html: ln.html }}
+                  />
+                )
+              )}
+            </div>
+            {note && <div className="engine-note">{note}</div>}
+          </article>
+        </div>
+      )}
     </>
   );
 }

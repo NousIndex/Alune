@@ -77,6 +77,11 @@ async function addSong(redis, body) {
     artist,
     lang: body?.lang || "auto",
     lyrics: body?.lyrics || "",
+    // Optional timed-lyrics payload for karaoke Follow mode. Stored only when
+    // present so songs without timing stay lean.
+    ...(body?.syncedLyrics ? { syncedLyrics: String(body.syncedLyrics) } : {}),
+    ...(Number(body?.duration) ? { duration: Number(body.duration) } : {}),
+    ...(body?.syncedSource ? { syncedSource: String(body.syncedSource) } : {}),
     createdAt: Date.now(),
   };
   const claimed = await redis.set(dedupRedisKey(key), song.id, { nx: true });
@@ -117,6 +122,9 @@ async function updateSong(redis, body) {
   if (typeof body.artist === "string") next.artist = body.artist.trim();
   if (typeof body.lang === "string") next.lang = body.lang;
   if (typeof body.lyrics === "string") next.lyrics = body.lyrics;
+  if (typeof body.syncedLyrics === "string") next.syncedLyrics = body.syncedLyrics;
+  if (body.duration != null && Number(body.duration)) next.duration = Number(body.duration);
+  if (typeof body.syncedSource === "string") next.syncedSource = body.syncedSource;
   next.id = id;
   next.updatedAt = Date.now();
 

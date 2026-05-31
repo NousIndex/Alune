@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchLyrics } from "../lib/lyricsApi";
+import { fetchSynced } from "../lib/syncedApi";
 import { resolveAliasOrOriginal } from "../lib/aliasApi";
 import { buildLibIndex, findExistingFolded } from "../lib/dedup";
 
@@ -30,6 +31,8 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
   const [form, setForm] = useState(EMPTY);
   const [fetchState, setFetchState] = useState({ loading: false, error: "" });
   const [saveState, setSaveState] = useState({ saving: false, error: "" });
+  // Karaoke timing lookup status, shown as a small badge under the lyrics.
+  const [syncedState, setSyncedState] = useState({ loading: false, found: false, source: "" });
   const [source, setSource] = useState("auto");
   const [langInfoOpen, setLangInfoOpen] = useState(false);
 
@@ -44,6 +47,11 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
       setSaveState({ saving: false, error: "" });
       setSource("auto");
       setLangInfoOpen(false);
+      setSyncedState({
+        loading: false,
+        found: !!initial?.syncedLyrics,
+        source: initial?.syncedSource || "",
+      });
     }
   }, [open, initial]);
 
@@ -94,6 +102,23 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
         title: f.title.trim() || data.trackName || "",
       }));
       setFetchState({ loading: false, error: "" });
+
+      // In parallel, look up timed lyrics (LRC) for karaoke Follow mode. Best
+      // effort — a miss just means no auto-scroll timing for this song.
+      setSyncedState({ loading: true, found: false, source: "" });
+      fetchSynced({ title: fetchedTitle, artist: fetchedArtist })
+        .then((s) => {
+          if (s) {
+            setForm((f) => ({
+              ...f,
+              syncedLyrics: s.syncedLyrics,
+              duration: s.duration,
+              syncedSource: s.source,
+            }));
+          }
+          setSyncedState({ loading: false, found: !!s, source: s?.source || "" });
+        })
+        .catch(() => setSyncedState({ loading: false, found: false, source: "" }));
     } catch (e) {
       setFetchState({ loading: false, error: e.message || "Couldn't fetch lyrics" });
     }
@@ -227,6 +252,14 @@ export default function Editor({ open, initial, library, onSave, onSelectExistin
             placeholder="Paste lyrics here, one line per line…"
           />
           {fetchState.error && <div className="hint error">{fetchState.error}</div>}
+          {syncedState.loading ? (
+            <div className="hint">Looking up karaoke timing…</div>
+          ) : syncedState.found ? (
+            <div className="hint synced-ok">
+              ♪ Karaoke timing found{syncedState.source ? ` (${syncedState.source})` : ""} — Follow
+              mode will auto-scroll this song.
+            </div>
+          ) : null}
         </div>
 
         {saveState.error && <div className="hint error">{saveState.error}</div>}

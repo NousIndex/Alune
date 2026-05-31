@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveAlias, normalizeName, formatPair } from "./api/_aliasing.js";
 import { fetchPlaylist } from "./api/_playlist.js";
+import { fetchSyncedLyrics } from "./api/_synced.js";
 import { otherChineseVariant, variantFallbackEnabled } from "./api/_chinese.js";
 
 const UPSTREAM = "https://lyrics.lewdhutao.my.eu.org";
@@ -205,6 +206,16 @@ function readBody(req) {
   });
 }
 
+// Raw binary body — used by the recognize proxy for the audio upload.
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 function devLibraryProxy(adminToken) {
   const norm = (s) =>
     (s || "").toLowerCase().trim().replace(/\s+/g, " ").normalize("NFC");
@@ -243,6 +254,9 @@ function devLibraryProxy(adminToken) {
               artist,
               lang: body.lang || "auto",
               lyrics: body.lyrics || "",
+              ...(body.syncedLyrics ? { syncedLyrics: String(body.syncedLyrics) } : {}),
+              ...(Number(body.duration) ? { duration: Number(body.duration) } : {}),
+              ...(body.syncedSource ? { syncedSource: String(body.syncedSource) } : {}),
               createdAt: Date.now(),
             };
             db.songs[song.id] = song;
@@ -262,6 +276,9 @@ function devLibraryProxy(adminToken) {
             if (typeof body.artist === "string") next.artist = body.artist.trim();
             if (typeof body.lang === "string") next.lang = body.lang;
             if (typeof body.lyrics === "string") next.lyrics = body.lyrics;
+            if (typeof body.syncedLyrics === "string") next.syncedLyrics = body.syncedLyrics;
+            if (body.duration != null && Number(body.duration)) next.duration = Number(body.duration);
+            if (typeof body.syncedSource === "string") next.syncedSource = body.syncedSource;
             next.updatedAt = Date.now();
             const newKey = dedupKey(next.title, next.artist);
             const collision = db.ids
@@ -534,6 +551,84 @@ function devBackfillProxy(adminToken) {
   };
 }
 
+// Mirror of api/recognize.js for `vite dev`: proxy the mic clip to AudD using
+// the local AUDD_API_TOKEN so the dev flow matches production.
+// Mirror of api/synced.js for `vite dev`: timed lyrics for karaoke Follow mode.
+function devSyncedProxy() {
+  return {
+    name: "dev-synced-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/synced", async (req, res) => {
+        const send = (status, body) => {
+          res.statusCode = status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(body));
+        };
+        try {
+          const url = new URL(req.url, "http://localhost");
+          const title = (url.searchParams.get("title") || "").trim();
+          const artist = (url.searchParams.get("artist") || "").trim();
+          if (!title) return send(400, { error: "title is required" });
+          const result = await fetchSyncedLyrics({ title, artist });
+          return send(200, result ? { found: true, ...result } : { found: false });
+        } catch (e) {
+          return send(502, { error: e.message });
+        }
+      });
+    },
+  };
+}
+
+function devRecognizeProxy(auddToken) {
+  return {
+    name: "dev-recognize-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/recognize", async (req, res) => {
+        const send = (status, body) => {
+          res.statusCode = status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(body));
+        };
+        try {
+          if (req.method !== "POST") {
+            res.setHeader("Allow", "POST");
+            return send(405, { error: "Method not allowed" });
+          }
+          if (!auddToken) {
+            return send(503, {
+              error: "Song recognition isn't configured. Set AUDD_API_TOKEN in your .env.",
+            });
+          }
+          const audio = await readRawBody(req);
+          if (!audio || audio.length < 1000) {
+            return send(400, { error: "Audio clip was empty or too short." });
+          }
+          const contentType = req.headers["content-type"] || "audio/webm";
+          const form = new FormData();
+          form.append("api_token", auddToken);
+          form.append("file", new Blob([audio], { type: contentType }), "clip.webm");
+          const r = await fetch("https://api.audd.io/", { method: "POST", body: form });
+          const json = await r.json().catch(() => null);
+          if (!json) return send(502, { error: "Recognition service returned an unreadable response." });
+          if (json.status === "error") {
+            return send(502, { error: json.error?.error_message || "Recognition failed." });
+          }
+          if (!json.result) return send(200, { matched: false });
+          return send(200, {
+            matched: true,
+            title: json.result.title || "",
+            artist: json.result.artist || "",
+            album: json.result.album || "",
+            songLink: json.result.song_link || "",
+          });
+        } catch (e) {
+          return send(502, { error: `Couldn't reach the recognition service: ${e.message}` });
+        }
+      });
+    },
+  };
+}
+
 function devAdminProxy(adminToken) {
   return {
     name: "dev-admin-proxy",
@@ -593,9 +688,12 @@ export default defineConfig(({ mode }) => {
     "SPOTIFY_CLIENT_ID",
     "SPOTIFY_CLIENT_SECRET",
     "YOUTUBE_API_KEY",
+    "AUDD_API_TOKEN",
+    "NETEASE_API_BASE",
   ]) {
     if (env[k] && !process.env[k]) process.env[k] = env[k];
   }
+  const auddToken = env.AUDD_API_TOKEN || "";
   return {
     plugins: [
       react(),
@@ -607,6 +705,8 @@ export default defineConfig(({ mode }) => {
       devAliasesProxy(adminToken),
       devPlaylistProxy(adminToken),
       devBackfillProxy(adminToken),
+      devRecognizeProxy(auddToken),
+      devSyncedProxy(),
     ],
   };
 });

@@ -34,6 +34,7 @@ export default function Library({
   onSearch,
   onSelect,
   onAdd,
+  onIdentify,
   onImportPlaylist,
   onBulkAdd,
   onAdminTools,
@@ -85,6 +86,24 @@ export default function Library({
           value={search}
           onChange={(e) => onSearch(e.target.value)}
         />
+        {/* Hidden for now: the mic "Identify what's playing" button. The full
+            feature is built (api/recognize.js + components/Identify.jsx via
+            onIdentify) but its recognition provider (AudD) isn't free for
+            ongoing use. Re-enable this button — and the matching one in App's
+            empty state — once we settle on a provider.
+        <button
+          className="mic-btn"
+          title="Identify what's playing and open its lyrics"
+          aria-label="Identify what's playing"
+          onClick={onIdentify}
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="2" />
+            <path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+        */}
         <button className="add-btn" title="Add a song" onClick={onAdd}>
           +
         </button>

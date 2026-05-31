@@ -5,6 +5,7 @@ import Editor from "./components/Editor.jsx";
 import Notice from "./components/Notice.jsx";
 import AdminGate from "./components/AdminGate.jsx";
 import SearchOverlay from "./components/SearchOverlay.jsx";
+import Identify from "./components/Identify.jsx";
 import PlaylistImport from "./components/PlaylistImport.jsx";
 import AdminTools from "./components/AdminTools.jsx";
 import { loadSettings, saveSettings } from "./lib/storage.js";
@@ -26,6 +27,7 @@ export default function App() {
   const [editingSong, setEditingSong] = useState(null);
   const [railOpen, setRailOpen] = useState(false);
   const [searchOverlayOpen, setSearchOverlayOpen] = useState(false);
+  const [identifyOpen, setIdentifyOpen] = useState(false);
   const [notice, setNotice] = useState({ open: false, message: "" });
   const [adminOpen, setAdminOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => Boolean(getAdminToken()));
@@ -108,6 +110,7 @@ export default function App() {
     );
     setActiveId(song.id);
     setEditorOpen(false);
+    setEditingSong(null);
     if (existed) {
       setNotice({
         open: true,
@@ -119,6 +122,14 @@ export default function App() {
     getCachedOrBuild(song).then((text) => {
       setSearchIndex((m) => new Map(m).set(song.id, text));
     });
+  };
+
+  // From the Identify modal: a song was recognized but isn't in the library.
+  // Open the Editor prefilled so the user can fetch lyrics and save it with the
+  // existing add flow (which also de-dupes against what's already stored).
+  const handleAddRecognized = ({ title, artist }) => {
+    setEditingSong({ title: title || "", artist: artist || "", lang: "auto", lyrics: "" });
+    setEditorOpen(true);
   };
 
   const handleEditActive = () => {
@@ -159,6 +170,8 @@ export default function App() {
   const ZH_CYCLE = { original: "simplified", simplified: "traditional", traditional: "original" };
   const cycleZhVariant = () =>
     setSettings((s) => ({ ...s, zhVariant: ZH_CYCLE[s.zhVariant] || "simplified" }));
+  const toggleHideOriginal = () =>
+    setSettings((s) => ({ ...s, hideOriginal: !s.hideOriginal }));
   const resize = (delta) =>
     setSettings((s) => ({
       ...s,
@@ -200,7 +213,12 @@ export default function App() {
         onSearch={setSearch}
         onSelect={selectSong}
         onAdd={() => {
+          setEditingSong(null);
           setEditorOpen(true);
+          setRailOpen(false);
+        }}
+        onIdentify={() => {
+          setIdentifyOpen(true);
           setRailOpen(false);
         }}
         onImportPlaylist={() => {
@@ -232,6 +250,7 @@ export default function App() {
             settings={settings}
             onToggleRomaji={toggleRomaji}
             onCycleZhVariant={cycleZhVariant}
+            onToggleHideOriginal={toggleHideOriginal}
             onResize={resize}
             isAdmin={isAdmin}
             onEdit={handleEditActive}
@@ -245,9 +264,22 @@ export default function App() {
               Pīnyīn, Japanese gets rōmaji — set right above the characters.
             </p>
             <div className="center-actions">
-              <button className="btn primary" onClick={() => setEditorOpen(true)}>
+              <button
+                className="btn primary"
+                onClick={() => {
+                  setEditingSong(null);
+                  setEditorOpen(true);
+                }}
+              >
                 Add a song
               </button>
+              {/* Hidden for now — see the note in Library.jsx. The Identify
+                  modal + plumbing stay wired so this is a one-line re-enable
+                  once we pick a (free) recognition provider.
+              <button className="btn ghost" onClick={() => setIdentifyOpen(true)}>
+                ● Identify a song
+              </button>
+              */}
               <button
                 className="btn ghost"
                 onClick={() => setSearchOverlayOpen(true)}
@@ -305,6 +337,14 @@ export default function App() {
         onClose={() => setSearchOverlayOpen(false)}
       />
 
+      <Identify
+        open={identifyOpen}
+        library={library}
+        onSelect={(id) => setActiveId(id)}
+        onAddMissing={handleAddRecognized}
+        onClose={() => setIdentifyOpen(false)}
+      />
+
       <PlaylistImport
         open={playlistImportOpen}
         library={library}
@@ -326,6 +366,7 @@ export default function App() {
 
       <AdminTools
         open={adminToolsOpen}
+        library={library}
         onClose={() => setAdminToolsOpen(false)}
         onBackfillComplete={async () => {
           try {

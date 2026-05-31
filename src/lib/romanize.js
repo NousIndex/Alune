@@ -124,7 +124,7 @@ function renderKoreanLine(line) {
     if (ch >= "가" && ch <= "힯") {
       const romaji = hangulSyllableRomaji(ch);
       out += romaji
-        ? `<ruby>${esc(ch)}<rt>${esc(romaji)}</rt></ruby>`
+        ? `<ruby><rb>${esc(ch)}</rb><rt>${esc(romaji)}</rt></ruby>`
         : esc(ch);
     } else {
       out += esc(ch);
@@ -160,7 +160,7 @@ function renderChineseLine(line, convert) {
   return arr
     .map((o) =>
       o.isZh && o.pinyin
-        ? `<ruby>${esc(o.origin)}<rt>${esc(o.pinyin)}</rt></ruby>`
+        ? `<ruby><rb>${esc(o.origin)}</rb><rt>${esc(o.pinyin)}</rt></ruby>`
         : esc(o.origin)
     )
     .join("");
@@ -201,7 +201,7 @@ async function renderJapaneseLine(line) {
         }
         const isJP = HAN.test(surface) || KANA.test(surface);
         return reading && isJP
-          ? `<ruby>${esc(surface)}<rt>${esc(reading)}</rt></ruby>`
+          ? `<ruby><rb>${esc(surface)}</rb><rt>${esc(reading)}</rt></ruby>`
           : esc(surface);
       })
       .join("");
@@ -215,7 +215,7 @@ function romajiKanaFallback(line) {
   let buf = "";
   const flush = () => {
     if (!buf) return;
-    out += `<ruby>${esc(buf)}<rt>${esc(toRomaji(buf))}</rt></ruby>`;
+    out += `<ruby><rb>${esc(buf)}</rb><rt>${esc(toRomaji(buf))}</rt></ruby>`;
     buf = "";
   };
   for (const ch of line) {

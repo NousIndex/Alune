@@ -5,6 +5,9 @@ import {
   deleteOverride,
   backfill,
 } from "../lib/aliasApi.js";
+import { fetchSynced } from "../lib/syncedApi.js";
+import { updateSong } from "../lib/libraryApi.js";
+import { hasTimestamps } from "../lib/lrc.js";
 
 const MODES = {
   HOME: "home",
@@ -13,7 +16,9 @@ const MODES = {
   DONE: "done",
 };
 
-export default function AdminTools({ open, onClose, onBackfillComplete }) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export default function AdminTools({ open, library, onClose, onBackfillComplete }) {
   const [mode, setMode] = useState(MODES.HOME);
   const [overrides, setOverrides] = useState([]);
   const [loadState, setLoadState] = useState({ loading: false, error: "" });
@@ -25,6 +30,9 @@ export default function AdminTools({ open, onClose, onBackfillComplete }) {
   const [preview, setPreview] = useState(null); // { scanned, proposed, changes }
   const [applyResult, setApplyResult] = useState(null);
 
+  // Karaoke-timing backfill (client-side: one /api/synced call per song).
+  const [syncState, setSyncState] = useState(null);
+
   useEffect(() => {
     if (!open) return;
     setMode(MODES.HOME);
@@ -33,6 +41,7 @@ export default function AdminTools({ open, onClose, onBackfillComplete }) {
     setPreview(null);
     setApplyResult(null);
     setScanState({ scanning: false, error: "" });
+    setSyncState(null);
     refresh();
   }, [open]);
 
@@ -108,6 +117,43 @@ export default function AdminTools({ open, onClose, onBackfillComplete }) {
       setScanState({ scanning: false, error: e.message || "Apply failed" });
       setMode(MODES.PREVIEW);
     }
+  };
+
+  // Fetch synced (timed) lyrics for every song that lacks them, then PATCH it
+  // in. Additive only — never rewrites the saved lyrics. Runs in the admin's
+  // browser so a big library can't time out a single serverless call.
+  const runSyncedBackfill = async () => {
+    const targets = (library || []).filter((s) => !hasTimestamps(s.syncedLyrics));
+    const total = targets.length;
+    if (!total) {
+      setSyncState({ finished: true, done: 0, total: 0, found: 0, failed: 0 });
+      return;
+    }
+    let done = 0;
+    let found = 0;
+    let failed = 0;
+    setSyncState({ running: true, done, total, found, failed });
+    for (const s of targets) {
+      try {
+        const r = await fetchSynced({ title: s.title, artist: s.artist });
+        if (r?.syncedLyrics) {
+          await updateSong({
+            id: s.id,
+            syncedLyrics: r.syncedLyrics,
+            duration: r.duration,
+            syncedSource: r.source,
+          });
+          found++;
+        }
+      } catch {
+        failed++;
+      }
+      done++;
+      setSyncState({ running: true, done, total, found, failed });
+      await sleep(120); // be gentle on LRCLIB
+    }
+    setSyncState({ finished: true, done, total, found, failed });
+    onBackfillComplete?.(); // refresh the library so the Follow buttons appear
   };
 
   if (!open) return null;
@@ -203,6 +249,45 @@ export default function AdminTools({ open, onClose, onBackfillComplete }) {
               <button className="btn ghost" onClick={startBackfill}>
                 Scan library for alias updates
               </button>
+            </section>
+
+            <section className="admin-section">
+              <h3>Karaoke timing</h3>
+              <p className="hint">
+                Fetch synced (timed) lyrics from LRCLIB for songs that don't have
+                them yet — that's what unlocks the <strong>Follow</strong> button.
+                This only <em>adds</em> timing; it never changes your saved lyrics.
+              </p>
+              <button
+                className="btn ghost"
+                onClick={runSyncedBackfill}
+                disabled={syncState?.running}
+              >
+                {syncState?.running
+                  ? `Fetching… ${syncState.done}/${syncState.total}`
+                  : "Fetch timing for songs without it"}
+              </button>
+              {syncState?.running && (
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.round((syncState.done / syncState.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
+              {syncState?.finished && (
+                <div className="hint synced-ok">
+                  {syncState.total === 0
+                    ? "Every song already has timing."
+                    : `Added timing to ${syncState.found} of ${syncState.total} song${
+                        syncState.total === 1 ? "" : "s"
+                      }${syncState.failed ? ` · ${syncState.failed} errored` : ""} · ${
+                        syncState.total - syncState.found - syncState.failed
+                      } not on LRCLIB.`}
+                </div>
+              )}
             </section>
 
             <div className="modal-actions">

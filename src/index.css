@@ -106,6 +106,23 @@ body::after {
   transition: transform 0.12s ease, filter 0.12s ease;
 }
 .add-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.mic-btn {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  border-radius: 10px;
+  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.mic-btn:hover {
+  border-color: var(--amber-soft);
+  color: var(--amber);
+  transform: translateY(-1px);
+}
 
 .rail-filter {
   display: flex;
@@ -441,6 +458,82 @@ rt {
 .lyrics ruby { margin: 0 0.02em; }
 .no-ruby rt { display: none; }
 
+/* Reading-only: hide the original glyphs and let the readings flow inline as
+ * the main text. Higher specificity than `.no-ruby rt` so it wins when both
+ * classes are present (readings stay visible even with Reading toggled off). */
+.lyrics.reading-only { line-height: 1.85; }
+.lyrics.reading-only rb { display: none; }
+.lyrics.reading-only ruby { margin: 0; }
+.lyrics.reading-only ruby::after { content: " "; } /* space between readings */
+.lyrics.reading-only rt {
+  display: inline;
+  font-size: 0.64em;
+  color: var(--paper);
+  transform: none;
+  padding: 0;
+  line-height: inherit;
+  letter-spacing: normal;
+  user-select: text;
+}
+
+/* ---------------- Karaoke / Follow mode ---------------- */
+.karaoke { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.karaoke-wrap { flex: 1; }
+.karaoke-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px clamp(14px, 4vw, 38px);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  flex-wrap: wrap;
+}
+.kbtn {
+  background: var(--ink);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  border-radius: 8px;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.kbtn:hover { border-color: var(--amber-soft); color: var(--amber); }
+.kbtn.kexit { margin-left: auto; }
+.ksep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.krate {
+  min-width: 44px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--paper-dim);
+  font-variant-numeric: tabular-nums;
+}
+.ksrc {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.khint { font-size: 0.82rem; color: var(--paper-dim); }
+.karaoke-hint {
+  padding: 6px clamp(14px, 4vw, 38px);
+  font-size: 0.75rem;
+  color: var(--paper-faint);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Follow mode dims every line but the one you're on. */
+.lyrics.follow .lyric-line { opacity: 0.32; transition: opacity 0.3s ease; cursor: pointer; }
+.lyrics.follow .lyric-line.active { opacity: 1; background: rgba(226, 166, 78, 0.12); }
+
+.hint.synced-ok { color: var(--amber-soft); }
+
 .engine-note {
   margin-top: 34px;
   font-size: 0.78rem;
@@ -494,6 +587,35 @@ rt {
   animation: spin 0.9s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------------- Identify (mic recognition) modal ---------------- */
+.identify-modal .identify-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 18px 0 22px;
+}
+.mic-pulse {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 0 rgba(226, 166, 78, 0.5);
+  animation: mic-pulse 1.4s ease-out infinite;
+}
+@keyframes mic-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(226, 166, 78, 0.45); }
+  70% { box-shadow: 0 0 0 16px rgba(226, 166, 78, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(226, 166, 78, 0); }
+}
+.identify-result {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 16px 0 22px;
+}
+.identify-result strong { font-size: 1.1rem; }
+.identify-result .a { color: var(--paper-faint); font-size: 0.9rem; }
 
 /* ---------------- Editor modal ---------------- */
 .scrim {
