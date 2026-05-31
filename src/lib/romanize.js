@@ -1,5 +1,14 @@
-import { pinyin } from "pinyin-pro";
+import { pinyin, customPinyin } from "pinyin-pro";
 import { toRomaji, isKana } from "wanakana";
+
+// pinyin-pro defaults a few characters to an archaic reading that's wrong for
+// modern lyrics. Register corrections once — this is global to pinyin-pro, so
+// the search index (searchIndex.js) picks them up too. Per-character (not
+// per-word) so they still apply when a word is split across two lyric lines.
+//   嚣 → xiāo  (嚣张 xiāozhāng / 叫嚣 / 甚嚣尘上); pinyin-pro defaults to áo.
+customPinyin({
+  嚣: "xiāo",
+});
 
 const HAN = /[\u3400-\u9fff\uf900-\ufaff]/;
 const KANA = /[\u3040-\u30ff]/;
