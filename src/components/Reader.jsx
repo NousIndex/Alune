@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { renderSong, dominantLang, HAN, KANA, HANGUL } from "../lib/romanize.js";
+import { renderSong, dominantLang, chineseRubyHtml, HAN, KANA, HANGUL } from "../lib/romanize.js";
 import { hasTimestamps } from "../lib/lrc.js";
 import Karaoke from "./Karaoke.jsx";
 
@@ -90,10 +90,17 @@ export default function Reader({
   return (
     <>
       <div className="stage-bar">
-        <div className="meta">
-          <h2>{song.title}</h2>
-          <p>{song.artist}</p>
-        </div>
+        {showVariant ? (
+          <div className={"meta has-ruby" + (settings.showRomaji ? "" : " no-ruby")}>
+            <h2 dangerouslySetInnerHTML={{ __html: chineseRubyHtml(song.title) }} />
+            <p dangerouslySetInnerHTML={{ __html: chineseRubyHtml(song.artist) }} />
+          </div>
+        ) : (
+          <div className="meta">
+            <h2>{song.title}</h2>
+            <p>{song.artist}</p>
+          </div>
+        )}
         <div className="controls">
           <button
             className={"ctrl" + (settings.showRomaji ? " on" : "")}

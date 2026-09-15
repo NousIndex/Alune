@@ -175,6 +175,13 @@ function renderChineseLine(line, convert) {
     .join("");
 }
 
+// Ruby HTML for a short Chinese string (song title / artist in the stage bar).
+// Non-Han text (e.g. "Joker Xue") passes through escaped.
+export function chineseRubyHtml(text) {
+  if (!HAN.test(text || "")) return esc(text);
+  return renderChineseLine(text, null);
+}
+
 /* ---------------- Japanese: word-level ruby, with kana fallback ---------------- */
 async function renderJapaneseLine(line) {
   const analyzer = await initKuroshiro();

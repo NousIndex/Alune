@@ -399,6 +399,22 @@ body::after {
   text-overflow: ellipsis;
 }
 .stage-bar .meta p { margin: 3px 0 0; font-size: 0.84rem; color: var(--paper-dim); }
+/* Pinyin over the title/artist of Chinese songs. The global rt offsets are tuned
+ * for lyric lines; reset them here so the reading isn't clipped by the h2's
+ * overflow:hidden. */
+.stage-bar .meta.has-ruby h2 { line-height: 1.9; padding-top: 2px; }
+.stage-bar .meta.has-ruby p { line-height: 2; margin-top: 0; }
+.stage-bar .meta.has-ruby ruby { margin: 0 0.02em; }
+.stage-bar .meta.has-ruby rt {
+  font-size: 0.42em;
+  line-height: 1.2;
+  padding-bottom: 0;
+  transform: none;
+}
+.stage-bar .meta.has-ruby p rt { font-size: 0.62em; }
+.stage-bar .meta.no-ruby rt { display: none; }
+.stage-bar .meta.no-ruby h2,
+.stage-bar .meta.no-ruby p { line-height: normal; }
 
 .controls { display: flex; align-items: center; gap: 10px; }
 .ctrl {
