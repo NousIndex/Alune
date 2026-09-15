@@ -13,16 +13,29 @@ import { getLibrary, addSong, updateSong, deleteSong } from "./lib/libraryApi.js
 import TimingFinder from "./components/TimingFinder.jsx";
 import { getAdminToken, clearAdminToken } from "./lib/admin.js";
 import {
+  loadCachedMeta,
+  saveCachedMeta,
+  loadFullSong,
+  loadFullSongs,
+  cacheFullSong,
+} from "./lib/songCache.js";
+import { summarizeSong } from "../api/_songMeta.js";
+import {
   lightSearchText,
   getCachedOrBuild,
   indexLibraryInBackground,
 } from "./lib/searchIndex.js";
 
 export default function App() {
-  const [library, setLibrary] = useState([]);
-  const [libState, setLibState] = useState({ loading: true, error: "" });
+  // Song summaries (no lyrics) — see api/_songMeta.js. Seeded from the last
+  // visit's copy so the sidebar renders instantly, then refreshed from the API.
+  const [cachedMeta] = useState(loadCachedMeta);
+  const [library, setLibrary] = useState(() => cachedMeta || []);
+  const [libState, setLibState] = useState({ loading: !cachedMeta, error: "" });
   const [settings, setSettings] = useState(loadSettings);
   const [activeId, setActiveId] = useState(null);
+  // Full record (lyrics + timing) for the open song only.
+  const [activeFull, setActiveFull] = useState(null);
   const [search, setSearch] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingSong, setEditingSong] = useState(null);
@@ -49,12 +62,17 @@ export default function App() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setLibState({ loading: false, error: e.message });
+        // With a cached list on screen, keep showing it rather than an error.
+        setLibState({ loading: false, error: cachedMeta ? "" : e.message });
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!libState.loading) saveCachedMeta(library);
+  }, [library, libState.loading]);
 
   useEffect(() => saveSettings(settings), [settings]);
   useEffect(() => {
@@ -74,29 +92,79 @@ export default function App() {
     setSearchIndex(light);
     setIndexProgress({ done: 0, total: library.length, finished: false });
 
-    const stop = indexLibraryInBackground(library, ({ id, text, done, total, finished }) => {
-      if (id && text) {
+    // Batch index updates: one state change per song meant ~1000 Map copies and
+    // sidebar re-renders on every startup, even when everything was cached.
+    const pending = new Map();
+    let latest = null;
+    let timer = null;
+    const flush = () => {
+      timer = null;
+      if (pending.size) {
+        const batch = new Map(pending);
+        pending.clear();
         setSearchIndex((m) => {
           const next = new Map(m);
-          next.set(id, text);
+          for (const [k, v] of batch) next.set(k, v);
           return next;
         });
       }
-      setIndexProgress({ done, total, finished });
-    });
-    return stop;
+      if (latest) setIndexProgress(latest);
+    };
+    const stop = indexLibraryInBackground(
+      library,
+      ({ id, text, done, total, finished }) => {
+        if (id && text) pending.set(id, text);
+        latest = { done, total, finished };
+        if (finished) {
+          clearTimeout(timer);
+          flush();
+        } else if (!timer) {
+          timer = setTimeout(flush, 300);
+        }
+      },
+      loadFullSongs
+    );
+    return () => {
+      stop();
+      clearTimeout(timer);
+    };
   }, [library]);
 
-  const activeSong = useMemo(
+  const activeMeta = useMemo(
     () => library.find((s) => s.id === activeId) || null,
     [library, activeId]
   );
+
+  // Load the open song's full record: from IndexedDB when its revision still
+  // matches, otherwise from the API. Re-runs when the song is edited (new rev).
+  useEffect(() => {
+    if (!activeMeta) {
+      setActiveFull(null);
+      return;
+    }
+    let cancelled = false;
+    setActiveFull((cur) => (cur && cur.id === activeMeta.id ? cur : null));
+    loadFullSong(activeMeta)
+      .then((song) => {
+        if (!cancelled) setActiveFull(song);
+      })
+      .catch((e) => {
+        if (!cancelled) setNotice({ open: true, message: e?.message || "Couldn't load lyrics." });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMeta?.id, activeMeta?.rev]);
+
+  const activeSong = activeFull && activeFull.id === activeId ? activeFull : null;
 
   const handleSave = async (form) => {
     if (form.id) {
       // Edit path — PATCH the existing song and replace it in the library.
       const updated = await updateSong(form);
-      setLibrary((lib) => lib.map((s) => (s.id === updated.id ? updated : s)));
+      await cacheFullSong(updated);
+      setActiveFull(updated);
+      setLibrary((lib) => lib.map((s) => (s.id === updated.id ? summarizeSong(updated) : s)));
       setActiveId(updated.id);
       setEditorOpen(false);
       setEditingSong(null);
@@ -107,8 +175,10 @@ export default function App() {
       return;
     }
     const { song, existed } = await addSong(form);
+    await cacheFullSong(song);
+    setActiveFull(song);
     setLibrary((lib) =>
-      lib.some((s) => s.id === song.id) ? lib : [song, ...lib]
+      lib.some((s) => s.id === song.id) ? lib : [summarizeSong(song), ...lib]
     );
     setActiveId(song.id);
     setEditorOpen(false);
@@ -143,7 +213,9 @@ export default function App() {
   // Admin: timing was saved for the open song via the TimingFinder dialog —
   // patch it into the library so the Follow button appears immediately.
   const handleTimingSaved = (updated) => {
-    setLibrary((lib) => lib.map((s) => (s.id === updated.id ? updated : s)));
+    cacheFullSong(updated);
+    setActiveFull(updated);
+    setLibrary((lib) => lib.map((s) => (s.id === updated.id ? summarizeSong(updated) : s)));
     setNotice({
       open: true,
       message: `Timed lyrics saved to “${updated.title}” — Follow mode is ready.`,
@@ -269,6 +341,11 @@ export default function App() {
             onDelete={handleDeleteActive}
             onFindTiming={() => setTimingFinderOpen(true)}
           />
+        ) : activeMeta ? (
+          <div className="center-state">
+            <div className="pulse" />
+            <p>Loading lyrics…</p>
+          </div>
         ) : (
           <div className="center-state">
             <h3>A quieter place for lyrics.</h3>

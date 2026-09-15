@@ -216,7 +216,9 @@ export default function AdminTools({ open, library, onClose, onBackfillComplete 
   // in. Additive only — never rewrites the saved lyrics. Runs in the admin's
   // browser so a big library can't time out a single serverless call.
   const runSyncedBackfill = async () => {
-    const targets = (library || []).filter((s) => !hasTimestamps(s.syncedLyrics));
+    const targets = (library || []).filter(
+      (s) => !(s.hasSync ?? hasTimestamps(s.syncedLyrics))
+    );
     const total = targets.length;
     if (!total) {
       setSyncState({ finished: true, done: 0, total: 0, found: 0, failed: 0 });

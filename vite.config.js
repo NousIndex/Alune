@@ -6,6 +6,7 @@ import { resolveAlias, normalizeName, formatPair, looksLikeMojibake } from "./ap
 import { fetchPlaylist } from "./api/_playlist.js";
 import { fetchSyncedLyrics, searchSyncedCandidates } from "./api/_synced.js";
 import { otherChineseVariant, variantFallbackEnabled } from "./api/_chinese.js";
+import { summarizeSong } from "./api/_songMeta.js";
 
 const UPSTREAM = "https://lyrics.lewdhutao.my.eu.org";
 
@@ -244,9 +245,23 @@ function devLibraryProxy(adminToken) {
         };
         try {
           if (req.method === "GET") {
+            // Mirrors api/library.js: ?id=, ?ids=, ?view=meta.
+            const url = new URL(req.url, "http://localhost");
             const db = readDb();
-            const songs = db.ids.map((id) => db.songs[id]).filter(Boolean);
-            return send(200, { songs });
+            const id = url.searchParams.get("id");
+            if (id) {
+              const song = db.songs[id];
+              return song ? send(200, { song }) : send(404, { error: "Song not found" });
+            }
+            const ids = url.searchParams.get("ids");
+            if (ids) {
+              return send(200, {
+                songs: ids.split(",").slice(0, 100).map((x) => db.songs[x.trim()]).filter(Boolean),
+              });
+            }
+            const songs = db.ids.map((sid) => db.songs[sid]).filter(Boolean);
+            const meta = url.searchParams.get("view") === "meta";
+            return send(200, { songs: meta ? songs.map(summarizeSong) : songs });
           }
           if (req.method === "POST") {
             const body = await readBody(req);

@@ -26,6 +26,7 @@ const FILTERS = [
 ];
 
 function detectLang(song) {
+  if (song.detLang) return song.detLang; // precomputed in the song summary
   if (song.lang && song.lang !== "auto") return song.lang;
   const dom = dominantLang(song.lyrics);
   if (dom !== "mixed") return dom;
@@ -206,7 +207,7 @@ export default function Library({
                 <div className="a">
                   <span className={"badge " + lang}>{label}</span>
                   <span className="a-name">{s.artist || "—"}</span>
-                  {hasTimestamps(s.syncedLyrics) && (
+                  {(s.hasSync ?? hasTimestamps(s.syncedLyrics)) && (
                     <span className="follow-dot" title="Karaoke timing available — Follow ready">
                       ♪
                     </span>

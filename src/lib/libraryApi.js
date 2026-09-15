@@ -1,9 +1,26 @@
 import { adminHeaders } from "./admin.js";
 
+// Song summaries only (no lyrics / timing) — see api/_songMeta.js. Use getSong /
+// getSongs (or the cached loaders in songCache.js) for full records.
 export async function getLibrary() {
-  const res = await fetch("/api/library");
+  const res = await fetch("/api/library?view=meta");
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new Error(json?.error || `Failed to load library (${res.status})`);
+  return json.songs || [];
+}
+
+export async function getSong(id) {
+  const res = await fetch(`/api/library?id=${encodeURIComponent(id)}`);
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Failed to load song (${res.status})`);
+  return json.song;
+}
+
+export async function getSongs(ids) {
+  if (!ids.length) return [];
+  const res = await fetch(`/api/library?ids=${ids.map(encodeURIComponent).join(",")}`);
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error || `Failed to load songs (${res.status})`);
   return json.songs || [];
 }
 

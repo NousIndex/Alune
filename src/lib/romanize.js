@@ -1,5 +1,6 @@
 import { pinyin, customPinyin } from "pinyin-pro";
 import { toRomaji, isKana } from "wanakana";
+import { dominantLang } from "../../api/_songMeta.js";
 
 // pinyin-pro defaults a few characters to an archaic reading that's wrong for
 // modern lyrics. Register corrections once — this is global to pinyin-pro, so
@@ -238,33 +239,9 @@ function romajiKanaFallback(line) {
   return out;
 }
 
-/* ---------------- whole-song dominant language ----------------
- * Counts script characters across the lyrics. If one language covers
- * ≥ threshold of the total, returns that language; otherwise "mixed".
- * Kanji (HAN) folds into Japanese when the song contains any kana,
- * since CJK songs rarely mix Chinese and Japanese in one work.
- */
-const LATIN_LETTER = /[a-zA-Z]/;
-export function dominantLang(text, threshold = 0.8) {
-  let han = 0, kana = 0, hangul = 0, latin = 0;
-  for (const ch of text || "") {
-    if (KANA.test(ch)) kana++;
-    else if (HANGUL.test(ch)) hangul++;
-    else if (HAN.test(ch)) han++;
-    else if (LATIN_LETTER.test(ch)) latin++;
-  }
-  const hasKana = kana > 0;
-  const ja = hasKana ? kana + han : 0;
-  const zh = hasKana ? 0 : han;
-  const counts = { ja, zh, ko: hangul, en: latin };
-  const total = ja + zh + hangul + latin;
-  if (total === 0) return "en";
-  let best = "en", bestCount = 0;
-  for (const [k, v] of Object.entries(counts)) {
-    if (v > bestCount) { best = k; bestCount = v; }
-  }
-  return bestCount / total >= threshold ? best : "mixed";
-}
+// Whole-song dominant language lives in api/_songMeta.js (the server uses it for
+// the sidebar badge); re-exported here for existing callers.
+export { dominantLang };
 
 /* ---------------- per-line language routing ---------------- */
 function lineLang(line, songLang) {

@@ -1,6 +1,6 @@
-// True when a string contains at least one [mm:ss] LRC timestamp — i.e. it's
-// real synced lyrics, not plain text. Gates the Follow button.
-export const hasTimestamps = (lrc) => /\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/.test(lrc || "");
+// True when a string contains at least one [mm:ss] LRC timestamp. Shared with
+// the server, which precomputes it as `hasSync` in song summaries.
+export { hasTimestamps } from "../../api/_songMeta.js";
 
 // Role labels that begin a credits line in CJK LRC files ("词：李荣浩",
 // "编曲：…", "母带后期处理录音室：…", "OP：…"). Matched as a *prefix* of the part

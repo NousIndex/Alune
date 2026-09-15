@@ -1,4 +1,7 @@
 import { Redis } from "@upstash/redis";
+import { summarizeSong } from "./_songMeta.js";
+
+const MAX_BULK_IDS = 100;
 
 const INDEX_KEY = "library:ids";
 const songKey = (id) => `song:${id}`;
@@ -171,7 +174,34 @@ export default async function handler(req, res) {
   try {
     const redis = client();
     if (req.method === "GET") {
+      const params = new URL(req.url, "http://localhost").searchParams;
+      // ?id=X → one full song (the song opened in the reader).
+      const id = params.get("id");
+      if (id) {
+        const song = await loadSong(redis, id);
+        if (!song) return res.status(404).json({ error: "Song not found" });
+        return res.status(200).json({ song });
+      }
+      // ?ids=a,b,c → full songs in bulk (background lyric-search indexing).
+      const idsParam = params.get("ids");
+      if (idsParam) {
+        const ids = idsParam
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, MAX_BULK_IDS);
+        if (!ids.length) return res.status(200).json({ songs: [] });
+        const raw = await redis.mget(...ids.map(songKey));
+        const songs = raw
+          .map((v, i) => (v ? { ...(typeof v === "string" ? JSON.parse(v) : v), id: ids[i] } : null))
+          .filter(Boolean);
+        return res.status(200).json({ songs });
+      }
       const songs = await listAll(redis);
+      // ?view=meta → summaries without lyrics / timing, for the sidebar.
+      if (params.get("view") === "meta") {
+        return res.status(200).json({ songs: songs.map(summarizeSong) });
+      }
       return res.status(200).json({ songs });
     }
     if (req.method === "POST") {
