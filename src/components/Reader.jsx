@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { renderSong, dominantLang, chineseRubyHtml, HAN, KANA, HANGUL } from "../lib/romanize.js";
+import { renderSong, renderMetaText, dominantLang, HAN, KANA, HANGUL } from "../lib/romanize.js";
 import { hasTimestamps } from "../lib/lrc.js";
 import Karaoke from "./Karaoke.jsx";
 
@@ -52,6 +52,21 @@ export default function Reader({
   const [note, setNote] = useState("");
   const [active, setActive] = useState(-1);
   const [follow, setFollow] = useState(false);
+  // Title/artist with readings; null until rendered (plain text shown meanwhile).
+  const [metaHtml, setMetaHtml] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMetaHtml(null);
+    Promise.all([renderMetaText(song.title, song), renderMetaText(song.artist, song)])
+      .then(([title, artist]) => {
+        if (!cancelled) setMetaHtml({ title, artist });
+      })
+      .catch((e) => console.warn("[alune] header readings failed", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [song.id, song.title, song.artist, song.lang, song.lyrics]);
 
   // The lyrics-container class is shared with Karaoke so Reading / reading-only
   // styling stays identical in Follow mode.
@@ -90,10 +105,10 @@ export default function Reader({
   return (
     <>
       <div className="stage-bar">
-        {showVariant ? (
+        {metaHtml && (metaHtml.title + metaHtml.artist).includes("<ruby") ? (
           <div className={"meta has-ruby" + (settings.showRomaji ? "" : " no-ruby")}>
-            <h2 dangerouslySetInnerHTML={{ __html: chineseRubyHtml(song.title) }} />
-            <p dangerouslySetInnerHTML={{ __html: chineseRubyHtml(song.artist) }} />
+            <h2 dangerouslySetInnerHTML={{ __html: metaHtml.title }} />
+            <p dangerouslySetInnerHTML={{ __html: metaHtml.artist }} />
           </div>
         ) : (
           <div className="meta">

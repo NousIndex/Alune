@@ -175,13 +175,6 @@ function renderChineseLine(line, convert) {
     .join("");
 }
 
-// Ruby HTML for a short Chinese string (song title / artist in the stage bar).
-// Non-Han text (e.g. "Joker Xue") passes through escaped.
-export function chineseRubyHtml(text) {
-  if (!HAN.test(text || "")) return esc(text);
-  return renderChineseLine(text, null);
-}
-
 /* ---------------- Japanese: word-level ruby, with kana fallback ---------------- */
 async function renderJapaneseLine(line) {
   const analyzer = await initKuroshiro();
@@ -312,6 +305,23 @@ const NOTE_NONE =
 const NOTE_PENDING =
   "Japanese romanizer is still initializing. If this message stays, check the browser console.";
 const NOTE_PINYIN = "Pinyin engine couldn’t load — original characters shown.";
+
+/* ---------------- public API: song title / artist ---------------- *
+ * Ruby HTML for the stage-bar header. Routes by the song's language (resolving
+ * "auto" from the lyrics) so kanji in a Japanese title get romaji rather than
+ * pinyin. Latin text (e.g. "Joker Xue") passes through escaped. Characters are
+ * left as saved — the Simplified/Traditional switch only rewrites lyrics.
+ */
+export async function renderMetaText(text, song) {
+  if (!text) return "";
+  let lang = song.lang;
+  if (!lang || lang === "auto") {
+    const dom = dominantLang(song.lyrics);
+    lang = dom === "mixed" ? "auto" : dom;
+  }
+  const res = await renderLine(text, lang, null);
+  return res.blank ? esc(text) : res.html;
+}
 
 /* ---------------- public API: render an entire song ---------------- */
 export async function renderSong(song, { zhVariant = "original" } = {}) {
